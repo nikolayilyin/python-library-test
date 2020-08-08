@@ -1,3 +1,7 @@
+"""
+this is compilation of useful functions that might be helpful to analyse BEAM-related data
+"""
+
 import matplotlib.pyplot as plt
 import numpy as np
 import time
