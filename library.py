@@ -12,106 +12,6 @@ from shapely.geometry.polygon import Polygon
 from io import StringIO
 
 
-def readCarRideStats(full_path):
-    df = pd.read_csv(full_path)
-    df['departure_time'] = df['departure_time'].astype(int)
-    return df
-
-
-def joinRefWithRun(ref_df, run_df):
-    # join_list = ['departure_time', 'start_x', 'start_y', 'end_x', 'end_y']
-    join_list = ['departure_time']
-    joined = pd.merge(ref_df, run_df, how='inner', left_on=join_list, right_on=join_list,
-                      suffixes=['_REF', '_RUN'])
-    print(len(joined))
-    joined['diff_start_x'] = abs(joined['start_x_REF'] - joined['start_x_RUN'])
-    joined['diff_start_y'] = abs(joined['start_y_REF'] - joined['start_y_RUN'])
-    joined['diff_end_x'] = abs(joined['end_x_REF'] - joined['end_x_RUN'])
-    joined['diff_end_y'] = abs(joined['end_y_REF'] - joined['end_y_RUN'])
-    joined['distance_for_join'] = joined['diff_start_x'] + joined['diff_start_y'] + joined['diff_end_x'] + joined[
-        'diff_end_y']
-    right_df = joined[joined['distance_for_join'] < 0.00003]
-    # joined.sort_values(by=['distance_for_join'], inplace=True)
-    # right_df = joined
-    return right_df
-
-
-def extractAfterJoin(df):
-    df = df[['route_0_name', 'route_1_name', 'route_2_name', 'route_0_travel_distance_meters',
-             'route_1_travel_distance_meters',
-             'route_2_travel_distance_meters', 'route_0_travel_time_min', 'route_0_travel_time_max',
-             'route_1_travel_time_min', 'route_1_travel_time_max',
-             'route_2_travel_time_min', 'route_2_travel_time_max', 'route_0_name_3am', 'route_1_name_3am',
-             'route_2_name_3am',
-             'route_0_travel_distance_meters_3am', 'route_1_travel_distance_meters_3am',
-             'route_2_travel_distance_meters_3am',
-             'route_0_travel_time_min_3am', 'route_0_travel_time_max_3am', 'route_1_travel_time_min_3am',
-             'route_1_travel_time_max_3am',
-             'route_2_travel_time_min_3am', 'route_2_travel_time_max_3am',
-             'departure_time', 'travel_time_RUN', 'distance_RUN', 'free_flow_travel_time_RUN']]
-    return df
-
-
-def google_link_to_joinable_link(link):
-    pos = link.rfind('!3e0')
-    # get the position of timestamp which is Unix epoch in seconds
-    time_pos = pos - len('1571185799')
-    return link[:time_pos]
-
-
-def getReference(path_to_final_csv, path_to_freeflow):
-    final_df = pd.read_csv(path_to_final_csv)
-    freeflow_df = pd.read_csv(path_to_freeflow, index_col=False)
-    final_df['link_for_join'] = final_df['google_link'].apply(lambda x: google_link_to_joinable_link(x))
-    freeflow_df['link_for_join'] = freeflow_df['url'].apply(lambda x: google_link_to_joinable_link(x))
-
-    merged_df = pd.merge(final_df, freeflow_df, how='inner',
-                         left_on=['link_for_join'], right_on=['link_for_join'],
-                         suffixes=('', '_3am'))
-    return merged_df
-
-
-def getRunWithReference(reference_df, run_path):
-    run_df = readCarRideStats(run_path)
-    joined = joinRefWithRun(reference_df, run_df)
-    print(len(joined))
-
-    final_df = extractAfterJoin(joined).copy()
-    print(len(final_df))
-    final_df['route_0_max_speed'] = final_df.apply(
-        lambda row: (row['route_0_travel_distance_meters'] / row['route_0_travel_time_min']), axis=1)
-    final_df['route_0_min_speed'] = final_df.apply(
-        lambda row: (row['route_0_travel_distance_meters'] / row['route_0_travel_time_max']), axis=1)
-    final_df['route_1_max_speed'] = final_df.apply(
-        lambda row: (row['route_1_travel_distance_meters'] / row['route_1_travel_time_min']), axis=1)
-    final_df['route_1_min_speed'] = final_df.apply(
-        lambda row: (row['route_1_travel_distance_meters'] / row['route_1_travel_time_max']), axis=1)
-    final_df['route_2_max_speed'] = final_df.apply(
-        lambda row: (row['route_1_travel_distance_meters'] / row['route_2_travel_time_min']), axis=1)
-    final_df['route_2_min_speed'] = final_df.apply(
-        lambda row: (row['route_1_travel_distance_meters'] / row['route_2_travel_time_max']), axis=1)
-
-    final_df['route_0_max_speed_3am'] = final_df.apply(
-        lambda row: (row['route_0_travel_distance_meters_3am'] / row['route_0_travel_time_min_3am']), axis=1)
-    final_df['route_0_min_speed_3am'] = final_df.apply(
-        lambda row: (row['route_0_travel_distance_meters_3am'] / row['route_0_travel_time_max_3am']), axis=1)
-    final_df['route_1_max_speed_3am'] = final_df.apply(
-        lambda row: (row['route_1_travel_distance_meters_3am'] / row['route_1_travel_time_min_3am']), axis=1)
-    final_df['route_1_min_speed_3am'] = final_df.apply(
-        lambda row: (row['route_1_travel_distance_meters_3am'] / row['route_1_travel_time_max_3am']), axis=1)
-    final_df['route_2_max_speed_3am'] = final_df.apply(
-        lambda row: (row['route_1_travel_distance_meters_3am'] / row['route_2_travel_time_min_3am']), axis=1)
-    final_df['route_2_min_speed_3am'] = final_df.apply(
-        lambda row: (row['route_1_travel_distance_meters_3am'] / row['route_2_travel_time_max_3am']), axis=1)
-
-    final_df['speed_RUN'] = final_df.apply(lambda row: (row['distance_RUN'] / row['travel_time_RUN']), axis=1)
-    final_df['free_flow_speed_RUN'] = final_df.apply(
-        lambda row: (row['distance_RUN'] / row['free_flow_travel_time_RUN']), axis=1)
-
-    final_df['departure_hour'] = (final_df['departure_time'] / 3600).astype(int)
-    return final_df
-
-
 def get_output_path_from_s3_url(s3_url):
     return s3_url \
         .strip() \
@@ -142,132 +42,16 @@ def get_realized_modes_as_str(full_path, data_file_name='referenceRealizedModeCh
     return result
 
 
-def plot_new_speed_old(new_df, title):
-    def get_speed(distance, travel_time):
-        if travel_time == 0:
-            return 0
-        else:
-            return distance / travel_time
-
-    new_df['departure_hour'] = new_df['departureTime'] // 3600
-    new_df['google_api_speed'] = new_df.apply(lambda row: (get_speed(row['googleDistance'], row['googleTravelTime'])),
-                                              axis=1)
-    new_df['sim_speed'] = new_df.apply(lambda row: (get_speed(row['legLength'], row['simTravelTime'])), axis=1)
-    new_df = new_df[new_df['departure_hour'] <= 30]
-
-    to_plot_df_speed_0 = new_df.groupby(['departure_hour']).mean()
-    to_plot_df_speed_0['departure_hour'] = to_plot_df_speed_0.index
-
-    ax = to_plot_df_speed_0.plot(x='departure_hour', y='google_api_speed')
-    to_plot_df_speed_0.plot(x='departure_hour', y='sim_speed', ax=ax)
-    ax.set_title(title)
-
-
-def plot_two_new_speed_graphs(df, title0, title1, ax0, ax1, travel_time_column="googleTravelTime"):
-    # googleTravelTimeWithTraffic or googleTravelTime
-    def get_speed(distance, travel_time):
-        if travel_time == 0:
-            return 0
-        else:
-            return distance / travel_time
-
-    df = df.loc[df['departureTime'] != 3 * 3600].copy()
-
-    df['google_api_speed'] = df.apply(lambda row: (get_speed(row['googleDistance'], row[travel_time_column])), axis=1)
-    df['sim_speed'] = df.apply(lambda row: (get_speed(row['legLength'], row['simTravelTime'])), axis=1)
-    df = df.loc[df['departureTime'] <= 30 * 3600].copy()
-
-    df = df.groupby(['vehicleId', 'departureTime'])[
-        [travel_time_column, 'googleDistance', 'google_api_speed', 'sim_speed']] \
-        .agg({travel_time_column: ['min', 'mean', 'max'], 'googleDistance': ['min', 'mean', 'max'],
-              'google_api_speed': ['min', 'mean', 'max'], 'sim_speed': ['min']})
-
-    df.reset_index(inplace=True)
-    df['departure_hour'] = df['departureTime'] // 3600
-
-    df.columns = ['{}_{}'.format(x[0], x[1]) for x in df.columns]
-    df['sim_speed'] = df['sim_speed_min']
-    df['error_mean'] = df['google_api_speed_mean'] - df['sim_speed']
-    df['error_min'] = df['google_api_speed_min'] - df['sim_speed']
-
-    ax0.hist(df['error_mean'], bins=range(-15, 15, 1), alpha=0.5, label='mean')
-    ax0.hist(df['error_min'], bins=range(-15, 15, 1), alpha=0.5, label='min')
-    ax0.set_title(title0)
-    ax0.set_xlabel('Speed difference')
-    ax0.set_ylabel('Frequency')
-    ax0.legend(loc='upper left')
-
-    to_plot_df_speed_0 = df.groupby(['departure_hour_']).mean()
-    to_plot_df_speed_0['departure_hour_'] = to_plot_df_speed_0.index
-    to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_min', ax=ax1)
-    to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_mean', ax=ax1)
-    to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_max', ax=ax1)
-    to_plot_df_speed_0.plot(x='departure_hour_', y='sim_speed', ax=ax1)
-
-    ax1.set_title(title1)
-
-
-def plot_new_speed(df, title):
-    fig, axs = plt.subplots(1, 2, figsize=(30, 7))
-    fig.tight_layout()
-
-    st = plt.suptitle(title)
-    st.set_y(0.95)
-
-    fig.subplots_adjust(top=0.85)
-
-    plot_two_new_speed_graphs(df, "Google API speed - Simulation speed", "", axs[0], axs[1])
-
-
-def plot_new_speed_two_df(df1, df2, title, iteration_title1, iteration_title2):
-    fig, axs = plt.subplots(2, 2, figsize=(30, 14))
-    fig.tight_layout(pad=6.0)
-
-    st = plt.suptitle(title)
-    st.set_y(0.95)
-
-    fig.subplots_adjust(top=0.85)
-
-    plot_two_new_speed_graphs(df1, "Google API speed - Simulation speed " + iteration_title1, iteration_title1,
-                              axs[0, 0], axs[0, 1], 'googleTravelTimeWithTraffic')
-    plot_two_new_speed_graphs(df2, "Google API speed - Simulation speed " + iteration_title2, iteration_title2,
-                              axs[1, 0], axs[1, 1])
-
-
-def plot_new_speed_api_vs_scrape(new_df):
-    new_df['departure_hour'] = new_df['departureTime'] // 3600
-    new_df['google_api_speed'] = new_df.apply(lambda row: (row['googleDistance'] / row['googleTravelTime']), axis=1)
-    new_df['sim_speed'] = new_df.apply(lambda row: (row['legLength'] / row['simTravelTime']), axis=1)
-    new_df['route_0_speed_max'] = new_df.apply(
-        lambda row: (row['route_0_travel_distance_meters'] / row['route_0_travel_time_min']), axis=1)
-    new_df['route_0_speed_min'] = new_df.apply(
-        lambda row: (row['route_0_travel_distance_meters'] / row['route_0_travel_time_max']), axis=1)
-    new_df['route_0_speed_avg'] = (new_df['route_0_speed_max'] + new_df['route_0_speed_min']) / 2
-
-    new_df = new_df[new_df['departure_hour'] <= 30]
-
-    to_plot_df_speed_0 = new_df.groupby(['departure_hour']).mean()
-    to_plot_df_speed_0['departure_hour'] = to_plot_df_speed_0.index
-
-    ax = to_plot_df_speed_0.plot(x='departure_hour', y='google_api_speed')
-    to_plot_df_speed_0.plot(x='departure_hour', y='sim_speed', ax=ax)
-    to_plot_df_speed_0.plot(x='departure_hour', y='route_0_speed_max', ax=ax)
-    to_plot_df_speed_0.plot(x='departure_hour', y='route_0_speed_min', ax=ax)
-    to_plot_df_speed_0.plot(x='departure_hour', y='route_0_speed_avg', ax=ax)
-    return to_plot_df_speed_0
-
-
 def plot_simulation_vs_google_speed_comparison(s3url, iteration, compare_vs_3am, title=""):
     s3path = get_output_path_from_s3_url(s3url)
-    s3_googleTravelTimeEstimation_path = s3path + "/ITERS/it.{0}/{0}.googleTravelTimeEstimation.csv".format(iteration)
-    google_tt = pd.read_csv(s3_googleTravelTimeEstimation_path)
+    google_tt = pd.read_csv(s3path + "/ITERS/it.{0}/{0}.googleTravelTimeEstimation.csv".format(iteration))
 
     google_tt_3am = google_tt[google_tt['departureTime'] == 3 * 60 * 60].copy()
     google_tt_rest = google_tt[
         (google_tt['departureTime'] != 3 * 60 * 60) & (google_tt['departureTime'] < 24 * 60 * 60)].copy()
 
-    googleTTcolumn = 'googleTravelTimeWithTraffic'
-    googleTTcolumn3am = 'googleTravelTimeWithTraffic'
+    google_tt_column = 'googleTravelTimeWithTraffic'
+    google_tt_column3am = 'googleTravelTimeWithTraffic'
 
     def get_speed(distance, travel_time):
         # travel time may be -1 for some google requests because of some google errors
@@ -282,21 +66,21 @@ def plot_simulation_vs_google_speed_comparison(s3url, iteration, compare_vs_3am,
 
     google_tt_3am['googleDistance3am'] = google_tt_3am['googleDistance']
     google_tt_3am['google_api_speed_3am'] = google_tt_3am.apply(
-        lambda row: (get_speed(row['googleDistance'], row[googleTTcolumn3am])), axis=1)
+        lambda row: (get_speed(row['googleDistance'], row[google_tt_column3am])), axis=1)
     google_tt_3am['uid'] = google_tt_3am.apply(get_uid, axis=1)
     google_tt_3am = google_tt_3am.groupby('uid')['uid', 'google_api_speed_3am', 'googleDistance3am'] \
         .agg(['min', 'mean', 'max']).copy()
     google_tt_3am.reset_index(inplace=True)
 
     google_tt_rest['google_api_speed'] = google_tt_rest.apply(
-        lambda row: (get_speed(row['googleDistance'], row[googleTTcolumn])), axis=1)
+        lambda row: (get_speed(row['googleDistance'], row[google_tt_column])), axis=1)
     google_tt_rest['sim_speed'] = google_tt_rest.apply(lambda row: (get_speed(row['legLength'], row['simTravelTime'])),
                                                        axis=1)
     google_tt_rest['uid'] = google_tt_rest.apply(get_uid, axis=1)
 
     df = google_tt_rest \
-        .groupby(['uid', 'departureTime'])[[googleTTcolumn, 'googleDistance', 'google_api_speed', 'sim_speed']] \
-        .agg({googleTTcolumn: ['min', 'mean', 'max'],
+        .groupby(['uid', 'departureTime'])[[google_tt_column, 'googleDistance', 'google_api_speed', 'sim_speed']] \
+        .agg({google_tt_column: ['min', 'mean', 'max'],
               'googleDistance': ['min', 'mean', 'max'],
               'google_api_speed': ['min', 'mean', 'max'], 'sim_speed': ['min']}) \
         .copy()
@@ -390,27 +174,6 @@ def grep_beamlog(url, keywords):
                 print(line)
 
 
-def plot_speed_graph(s3url, iteration):
-    s3path = get_output_path_from_s3_url(s3url)
-    print(s3path)
-    config = parse_config(s3path + "/fullBeamConfig.conf")
-    s3_file_path = s3path + "/ITERS/it.{0}/{0}.googleTravelTimeEstimation.csv".format(iteration)
-    title = '{}. {} & {} Iteration {}'.format(config["simulationName"], config.get('speedScalingFactor', '?'),
-                                              config.get('flowCapacityFactor', '?'), iteration)
-    return plot_new_speed(pd.read_csv(s3_file_path), title)
-
-
-def plot_speed_graph_two_iterations(s3url, iteration1, iteration2):
-    s3path = get_output_path_from_s3_url(s3url)
-    config = parse_config(s3path + "/fullBeamConfig.conf")
-    s3_file_path1 = s3path + "/ITERS/it.{0}/{0}.googleTravelTimeEstimation.csv".format(iteration1)
-    s3_file_path2 = s3path + "/ITERS/it.{0}/{0}.googleTravelTimeEstimation.csv".format(iteration2)
-    title = '{}. {} & {}'.format(config["simulationName"], config.get('speedScalingFactor', "?"),
-                                 config['flowCapacityFactor'])
-    return plot_new_speed_two_df(pd.read_csv(s3_file_path1), pd.read_csv(s3_file_path2), title,
-                                 'Iteration {}'.format(iteration1), 'Iteration {}'.format(iteration2))
-
-
 def read_traffic_counts(df):
     df['date'] = df['Date'].apply(lambda x: dt.datetime.strptime(x, "%m/%d/%Y"))
     df['hour_0'] = df['12:00-1:00 AM']
@@ -451,7 +214,7 @@ def aggregate_per_hour(traffic_df, date):
     agg_df = wednesday_df.groupby(['date']).sum()
     agg_list = []
     for i in range(0, 24):
-        xs = [i, agg_df['hour_%d' % (i)][0]]
+        xs = [i, agg_df['hour_%d' % i][0]]
         agg_list.append(xs)
     return pd.DataFrame(agg_list, columns=['hour', 'count'])
 
@@ -461,7 +224,7 @@ def plot_traffic_count(date):
     path_to_csv = 'https://data.cityofnewyork.us/api/views/ertz-hr4r/rows.csv?accessType=DOWNLOAD'
     df = read_traffic_counts(pd.read_csv(path_to_csv))
     agg_per_hour_df = aggregate_per_hour(df, date)
-    agg_per_hour_df.plot(x='hour', y='count', title='Date is %s' % (date))
+    agg_per_hour_df.plot(x='hour', y='count', title='Date is %s' % date)
 
 
 def load_activity_ends(events_file_path, chunksize=100000):
@@ -546,8 +309,8 @@ def parse_config(config_url):
     config_map = {}
     default_value = ""
 
-    for key in config_keys:
-        config_map[key] = default_value
+    for conf_key in config_keys:
+        config_map[conf_key] = default_value
 
     def set_value(key, line_value):
         value = line_value.strip().replace("\"", "")
@@ -623,7 +386,7 @@ def get_calibration_text_data(s3url):
     grep_beamlog(s3path + "/beamLog.out", ["Total number of links", "Number of persons:"])
 
 
-def get_calibration_PNG_graphs(s3url, first_iteration=0, last_iteration=0, png_title=None):
+def get_calibration_png_graphs(s3url, first_iteration=0, last_iteration=0, png_title=None):
     s3path = get_output_path_from_s3_url(s3url)
 
     # ######
@@ -637,9 +400,9 @@ def get_calibration_PNG_graphs(s3url, first_iteration=0, last_iteration=0, png_t
 
     def display_two_png(path1, path2, title=png_title):
         def display_png(ax, path):
-            title = path.split('/')[-1] + "\n"
+            ax_title = path.split('/')[-1] + "\n"
 
-            ax.set_title(title, pad=0.1)
+            ax.set_title(ax_title, pad=0.1)
             ax.axes.get_xaxis().set_visible(False)
             ax.axes.get_xaxis().labelpad = 0
             ax.axes.get_yaxis().set_visible(False)
@@ -662,13 +425,6 @@ def get_calibration_PNG_graphs(s3url, first_iteration=0, last_iteration=0, png_t
 
     display_two_png(s3path + "/referenceRealizedModeChoice.png",
                     s3path + "/referenceRealizedModeChoice_commute.png")
-
-
-def get_calibration_speed_analysis(s3url, first_iteration=0, last_iteration=0):
-    if last_iteration <= 0:
-        plot_speed_graph(s3url, 0)
-    else:
-        plot_speed_graph_two_iterations(s3url, 0, last_iteration)
 
 
 def get_calibration_volume_analysis(s3url, first_iteration=0, last_iteration=0, title=""):
@@ -703,40 +459,41 @@ def plot_vehicle_type_passengets_by_hours(events_file_path, chunksize=100000):
     events['time'] = events['time'].astype('float')
     events = events.sort_values(by='time', ascending=True)
 
-    hour2Type2NumPassenger = {}
-    vehicle2PassengersAndType = {}
-    lastHour = 0
+    hour2type2num_passenger = {}
+    vehicle2passengers_and_type = {}
+    last_hour = 0
 
-    def updateLastHourVehicles():
-        curType2NumPassenger = {}
-        for v, (passengers, t) in vehicle2PassengersAndType.items():
-            if t not in curType2NumPassenger:
-                curType2NumPassenger[t] = 0
-            curType2NumPassenger[t] = curType2NumPassenger[t] + passengers
-        hour2Type2NumPassenger[lastHour] = curType2NumPassenger
+    def update_last_hour_vehicles():
+        cur_type2num_passenger = {}
+        for _, (passengers, t) in vehicle2passengers_and_type.items():
+            if t not in cur_type2num_passenger:
+                cur_type2num_passenger[t] = 0
+            cur_type2num_passenger[t] = cur_type2num_passenger[t] + passengers
+        hour2type2num_passenger[last_hour] = cur_type2num_passenger
 
     for index, row in events.iterrows():
         hour = int(float(row['time']) / 3600)
-        vType = row['vehicleType']
+        vehicle_type = row['vehicleType']
         v = row['vehicle']
-        passengers = int(row['numPassengers'])
-        if vType == 'BODY-TYPE-DEFAULT': continue
-        if hour != lastHour:
-            updateLastHourVehicles()
-            lastHour = hour
-            vehicle2PassengersAndType = {}
-        if (v not in vehicle2PassengersAndType) or (vehicle2PassengersAndType[v][0] < passengers):
-            vehicle2PassengersAndType[v] = (passengers, vType)
+        num_passengers = int(row['numPassengers'])
+        if vehicle_type == 'BODY-TYPE-DEFAULT':
+            continue
+        if hour != last_hour:
+            update_last_hour_vehicles()
+            last_hour = hour
+            vehicle2passengers_and_type = {}
+        if (v not in vehicle2passengers_and_type) or (vehicle2passengers_and_type[v][0] < num_passengers):
+            vehicle2passengers_and_type[v] = (num_passengers, vehicle_type)
 
-    updateLastHourVehicles()
+    update_last_hour_vehicles()
     vehicles = set()
-    for hour, data in hour2Type2NumPassenger.items():
-        for v, passengers in data.items():
+    for hour, data in hour2type2num_passenger.items():
+        for v, _ in data.items():
             vehicles.add(v)
 
     hours = []
     res = {}
-    for h, dataForHour in hour2Type2NumPassenger.items():
+    for h, dataForHour in hour2type2num_passenger.items():
         hours.append(h)
         for v in vehicles:
             if v not in res:
@@ -752,38 +509,38 @@ def plot_vehicle_type_passengets_by_hours(events_file_path, chunksize=100000):
     fig1, axes = plt.subplots(rows, 2, figsize=(25, 7 * rows))
     fig1.tight_layout(pad=0.1)
     fig1.subplots_adjust(wspace=0.25, hspace=0.1)
-    resDf = pd.DataFrame(res)
+    res_df = pd.DataFrame(res)
     for i, v in enumerate(vehicles):
         if i < len(vehicles) - 1:
-            resDf.plot(x='HOUR', y=v, ax=axes[int(i / 2)][i % 2])
+            res_df.plot(x='HOUR', y=v, ax=axes[int(i / 2)][i % 2])
         else:
             fig1, ax = plt.subplots(1, 1, figsize=(8, 7))
             fig1.tight_layout(pad=0.1)
             fig1.subplots_adjust(wspace=0.25, hspace=0.1)
-            resDf.plot(x='HOUR', y=v, ax=ax)
+            res_df.plot(x='HOUR', y=v, ax=ax)
 
 
-def people_flow_in_CBD_s3(s3url, iteration):
+def people_flow_in_cbd_s3(s3url, iteration):
     s3path = get_output_path_from_s3_url(s3url)
     events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
-    return people_flow_in_CBD_file_path(events_file_path)
+    return people_flow_in_cbd_file_path(events_file_path)
 
 
-def people_flow_in_CBD_file_path(events_file_path, chunksize=100000):
+def people_flow_in_cbd_file_path(events_file_path, chunksize=100000):
     events = pd.concat([events[events['type'] == 'PathTraversal'] for events in
                         pd.read_csv(events_file_path, low_memory=False, chunksize=chunksize)])
-    return people_flow_in_CBD(events)
+    return people_flow_in_cdb(events)
 
 
-def diff_people_flow_in_CBD_s3(s3url, iteration, s3url_base, iteration_base):
+def diff_people_flow_in_cbd_s3(s3url, iteration, s3url_base, iteration_base):
     s3path = get_output_path_from_s3_url(s3url)
     events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
     s3path_base = get_output_path_from_s3_url(s3url_base)
     events_file_path_base = s3path_base + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration_base)
-    return diff_people_flow_in_CBD_file_path(events_file_path, events_file_path_base)
+    return diff_people_flow_in_cbd_file_path(events_file_path, events_file_path_base)
 
 
-def diff_people_flow_in_CBD_file_path(events_file_path, events_file_path_base, chunksize=100000):
+def diff_people_flow_in_cbd_file_path(events_file_path, events_file_path_base, chunksize=100000):
     events = pd.concat([events[events['type'] == 'PathTraversal'] for events in
                         pd.read_csv(events_file_path, low_memory=False, chunksize=chunksize)])
     events_base = pd.concat([events[events['type'] == 'PathTraversal'] for events in
@@ -791,7 +548,7 @@ def diff_people_flow_in_CBD_file_path(events_file_path, events_file_path_base, c
     return diff_people_in(events, events_base)
 
 
-def people_flow_in_CBD(df):
+def people_flow_in_cdb(df):
     polygon = Polygon([
         (-74.005088, 40.779100),
         (-74.034957, 40.680314),
@@ -803,7 +560,7 @@ def people_flow_in_CBD(df):
         point = Point(x, y)
         return polygon.contains(point)
 
-    def numPeople(row):
+    def num_people(row):
         mode = row['mode']
         if mode in ['walk', 'bike']:
             return 1
@@ -827,7 +584,7 @@ tram,3528,3528
     f = df[(df['type'] == 'PathTraversal')][['mode', 'numPassengers', 'startX', 'startY', 'endX', 'endY']].copy(
         deep=True)
 
-    f['numPeople'] = f.apply(lambda row: numPeople(row), axis=1)
+    f['numPeople'] = f.apply(lambda row: num_people(row), axis=1)
     f = f[f['numPeople'] > 0]
 
     f['startIn'] = f.apply(lambda row: inside(row['startX'], row['startY']), axis=1)
@@ -864,7 +621,7 @@ def get_people_in(df):
         point = Point(x, y)
         return polygon.contains(point)
 
-    def numPeople(row):
+    def num_people(row):
         mode = row['mode']
         if mode in ['walk', 'bike']:
             return 1
@@ -876,7 +633,7 @@ def get_people_in(df):
     f = df[(df['type'] == 'PathTraversal') & (df['mode'].isin(['car', 'bus', 'subway']))][
         ['mode', 'numPassengers', 'startX', 'startY', 'endX', 'endY']].copy(deep=True)
 
-    f['numPeople'] = f.apply(lambda row: numPeople(row), axis=1)
+    f['numPeople'] = f.apply(lambda row: num_people(row), axis=1)
     f = f[f['numPeople'] > 0]
 
     f['startIn'] = f.apply(lambda row: inside(row['startX'], row['startY']), axis=1)
@@ -892,7 +649,7 @@ def get_people_in(df):
     return s['percentIn']
 
 
-def diff_people_in(current, base, day_of_month=5):
+def diff_people_in(current, base):
     def reference():
         data = """date,subway,bus,car
 07/05/2020,-77.8,-35,-21.8
@@ -926,13 +683,13 @@ def diff_people_in(current, base, day_of_month=5):
     return result
 
 
-def plot_hist(df, column_group_by, column_build_hist, ax, bins=100, alpha=0.2):
+def plot_hists(df, column_group_by, column_build_hist, ax, bins=100, alpha=0.2):
     for (i, d) in df.groupby(column_group_by):
         d[column_build_hist].hist(bins=bins, alpha=alpha, ax=ax, label=i)
     ax.legend()
 
 
-def calc_number_of_rows_in_beamLog(s3url, keyword):
+def calc_number_of_rows_in_beamlog(s3url, keyword):
     s3path = get_output_path_from_s3_url(s3url)
     beamlog = urllib.request.urlopen(s3path + "/beamLog.out")
     count = 0
@@ -951,9 +708,12 @@ def grep_beamlog_for_errors_warnings(s3url):
         r".*GeoUtilsImpl - .* Coordinate does not appear to be in WGS. No conversion will happen:.*",
         r".*InfluxDbSimulationMetricCollector - There are enabled metrics, but InfluxDB is unavailable at.*",
         r".*ClusterSystem-akka.*WARN.*PersonAgent.*didn't get nextActivity.*",
-        r".*ClusterSystem-akka.*WARN.*Person Actor.*attempted to reserve ride with agent Actor.*that was not found, message sent to dead letters.",
-        r".*ClusterSystem-akka.*ERROR.*PersonAgent - State:FinishingModeChoice PersonAgent:[0-9]*[ ]*Current tour vehicle is the same as the one being removed: [0-9]* - [0-9]*.*"
+        r".*ClusterSystem-akka.*WARN.*Person Actor.*attempted to reserve ride with agent Actor.*"
+        + "that was not found, message sent to dead letters.",
+        r".*ClusterSystem-akka.*ERROR.*PersonAgent - State:FinishingModeChoice PersonAgent:[0-9]*[ ]*"
+        + "Current tour vehicle is the same as the one being removed: [0-9]* - [0-9]*.*"
     ]
+
     error_count = {}
     for error in error_patterns_for_count:
         error_count[error] = 0
