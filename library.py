@@ -13,6 +13,13 @@ from io import StringIO
 
 
 def get_output_path_from_s3_url(s3_url):
+    """
+    transform s3 output path (from beam runs spreadsheet) into path to s3 output
+    that may be used as part of path to the file.
+
+    s3path = get_output_path_from_s3_url(s3url)
+    beam_log_path = s3path + '/beamLog.out'
+    """
     return s3_url \
         .strip() \
         .replace("s3.us-east-2.amazonaws.com/beam-outputs/index.html#", "beam-outputs.s3.amazonaws.com/")
