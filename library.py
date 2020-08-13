@@ -75,13 +75,15 @@ def plot_simulation_vs_google_speed_comparison(s3url, iteration, compare_vs_3am,
         return "{}:{}:{}:{}:{}".format(row['vehicleId'], row['originLat'], row['originLng'], row['destLat'],
                                        row['destLng'])
 
-    google_tt_3am['googleDistance3am'] = google_tt_3am['googleDistance']
-    google_tt_3am['google_api_speed_3am'] = google_tt_3am.apply(
-        lambda row: (get_speed(row['googleDistance'], row[google_tt_column3am])), axis=1)
-    google_tt_3am['uid'] = google_tt_3am.apply(get_uid, axis=1)
-    google_tt_3am = google_tt_3am.groupby('uid')['uid', 'google_api_speed_3am', 'googleDistance3am'] \
-        .agg(['min', 'mean', 'max']).copy()
-    google_tt_3am.reset_index(inplace=True)
+    if compare_vs_3am:
+        google_tt_3am['googleDistance3am'] = google_tt_3am['googleDistance']
+        google_tt_3am['google_api_speed_3am'] = google_tt_3am.apply(
+            lambda row: (get_speed(row['googleDistance'], row[google_tt_column3am])), axis=1)
+
+        google_tt_3am['uid'] = google_tt_3am.apply(get_uid, axis=1)
+        google_tt_3am = google_tt_3am.groupby('uid')['uid', 'google_api_speed_3am', 'googleDistance3am'] \
+            .agg(['min', 'mean', 'max']).copy()
+        google_tt_3am.reset_index(inplace=True)
 
     google_tt_rest['google_api_speed'] = google_tt_rest.apply(
         lambda row: (get_speed(row['googleDistance'], row[google_tt_column])), axis=1)
@@ -97,17 +99,19 @@ def plot_simulation_vs_google_speed_comparison(s3url, iteration, compare_vs_3am,
         .copy()
 
     df.reset_index(inplace=True)
-    df = df.join(google_tt_3am.set_index('uid'), on='uid')
+
+    if compare_vs_3am:
+        df = df.join(google_tt_3am.set_index('uid'), on='uid')
 
     df['departure_hour'] = df['departureTime'] // 3600
 
     df.columns = ['{}_{}'.format(x[0], x[1]) for x in df.columns]
     df['sim_speed'] = df['sim_speed_min']
 
-    fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(19, 3))
+    fig, (ax00, ax0, ax1) = plt.subplots(1, 3, figsize=(19, 3))
     fig.tight_layout(pad=0.1)
-    fig.subplots_adjust(wspace=0.1, hspace=0.1)
-    fig.suptitle(title, y=1.09)
+    fig.subplots_adjust(wspace=0.15, hspace=0.1)
+    fig.suptitle(title, y=1.11)
 
     title0 = "simulation speed - Google speed"
     title1 = "simulation speed comparison with Google speed"
@@ -118,14 +122,21 @@ def plot_simulation_vs_google_speed_comparison(s3url, iteration, compare_vs_3am,
     def plot_hist(google_column_name, label):
         result_name = 'error_' + label
         df[result_name] = df['sim_speed'] - df[google_column_name]
-        df[result_name].hist(bins=range(-17, 17, 1), alpha=0.5, label=label, ax=ax0)
-        # df[result_name].plot.kde(bw_method=0.1, secondary_y=True, ax=ax0)
+        bins = range(-19, 19, 2)
+        # df[result_name].hist(bins=bins, alpha=1, histtype='step', linewidth=3, label=label, ax=ax0)
+        df[result_name].hist(bins=bins, alpha=0.3, label=label, ax=ax0)
+        df[result_name].plot.kde(bw_method=0.2, ax=ax00)
 
     if compare_vs_3am:
         plot_hist('google_api_speed_3am_max', 'max')
     else:
-        plot_hist('google_api_speed_3am_mean', 'mean')
-        plot_hist('google_api_speed_3am_min', 'min')
+        plot_hist('google_api_speed_max', 'max')
+        plot_hist('google_api_speed_mean', 'mean')
+        plot_hist('google_api_speed_min', 'min')
+
+    ax00.axvline(0, color="black", linestyle="--")
+    ax00.set_title(title0)
+    ax00.legend(loc='upper left')
 
     ax0.axvline(0, color="black", linestyle="--")
     ax0.set_title(title0)
@@ -137,16 +148,17 @@ def plot_simulation_vs_google_speed_comparison(s3url, iteration, compare_vs_3am,
     to_plot_df_speed_0['departure_hour_'] = to_plot_df_speed_0.index
 
     if compare_vs_3am:
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_min', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_mean', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_max', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_min', label='g min', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_mean', label='g mean', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_max', label='g max', ax=ax1)
     else:
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_min', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_mean', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_max', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_min', label='g 3am min', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_mean', label='g 3am mean', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_max', label='g 3am max', ax=ax1)
 
     to_plot_df_speed_0.plot(x='departure_hour_', y='sim_speed', ax=ax1)
 
+    ax1.legend()
     ax1.set_title(title1)
 
 
@@ -315,7 +327,7 @@ def parse_config(config_url):
                    "maxLinkLengthToApplySpeedScalingFactor"]
     intercept_keys = ["bike_intercept", "car_intercept", "drive_transit_intercept", "ride_hail_intercept",
                       "ride_hail_pooled_intercept", "ride_hail_transit_intercept", "walk_intercept",
-                      "walk_transit_intercept"]
+                      "walk_transit_intercept", "transfer"]
 
     config_map = {}
     default_value = ""
@@ -337,8 +349,17 @@ def parse_config(config_url):
                 print("   value in the map  \t", old_val)
                 print("   new rejected value\t", value)
 
+    physsim_names = ['JDEQSim', 'BPRSim', 'PARBPRSim', 'CCHRoutingAssignment']
+
+    def look_for_physsim_type(config_line):
+        for physsim_name in physsim_names:
+            if 'name={}'.format(physsim_name) in config_line:
+                set_value("physsim_type", "physsim_type = {}".format(physsim_name))
+
     for b_line in config.readlines():
         line = b_line.decode("utf-8").strip()
+
+        look_for_physsim_type(line)
 
         for ckey in config_keys:
             if ckey + "=" in line or ckey + "\"=" in line:
@@ -367,27 +388,21 @@ def get_calibration_text_data(s3url):
     def get_config_value(conf_value_name):
         return config.get(conf_value_name, '=default').split('=')[-1]
 
-    print('ordered intercepts:')
     intercepts = ["car_intercept", "walk_intercept", "bike_intercept", "ride_hail_intercept",
                   "ride_hail_transit_intercept",
-                  "walk_transit_intercept", "drive_transit_intercept", "ride_hail_pooled_intercept"]
-
+                  "walk_transit_intercept", "drive_transit_intercept", "ride_hail_pooled_intercept", "transfer"]
+    print('order of intercepts:', "\n\t\t ".join(intercepts))
     print(', '.join(get_config_value(x) for x in intercepts))
     print("")
-
-    print("order of config values:",
-          "\n\t agentSampleSizeAsFractionOfPopulation \n\t flowCapacityFactor \n\t speedScalingFactor",
-          "\n\t quick_fix_minCarSpeedInMetersPerSecond \n\t minimumRoadSpeedInMetersPerSecond ",
-          "\n\t fractionOfInitialVehicleFleet \n\t beam.agentsim.tuning.transitCapacity",
-          "\n\t fractionOfPeopleWithBicycle \n\t parkingStallCountScalingFactor \n\t transitPrice")
 
     config_ordered = ["agentSampleSizeAsFractionOfPopulation", "flowCapacityFactor", "speedScalingFactor",
                       "quick_fix_minCarSpeedInMetersPerSecond", "minimumRoadSpeedInMetersPerSecond",
                       "fractionOfInitialVehicleFleet", "transitCapacity", "fractionOfPeopleWithBicycle",
                       "parkingStallCountScalingFactor", "transitPrice"]
+    print('order of config values:', "\n\t\t ".join(config_ordered))
     print(', '.join(get_config_value(x) for x in config_ordered))
-
     print("")
+
     print('the rest of configuration:')
     for key, value in config.items():
         if 'intercept' not in key and key not in config_ordered:
