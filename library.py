@@ -864,7 +864,7 @@ def analyze_fake_walkers(s3url, iteration, min_length=0):
     print(number_of_fake_walkers, number_of_fake_walkers / number_of_all_modechoice)
 
 
-def compare_ridership_vs_baserun_and_benchmark(s3url_run, s3url_base_run):
+def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s3url_base_run):
     columns = ['date', 'subway', 'bus', 'car', 'transit']
     benchmark_mta_info = [['07/01/2020', -79.60, -49, -16.20, -71.0],
                           ['06/03/2020', -87.60, -66, -37.40, -81.5],
@@ -886,9 +886,14 @@ def compare_ridership_vs_baserun_and_benchmark(s3url_run, s3url_base_run):
 
     def get_car_bus_subway_trips(s3url, iteration):
         s3path = get_output_path_from_s3_url(s3url)
-        car_trips = pd.read_csv(s3path + "/ITERS/it.{0}/{0}.passengerPerTripCar.csv".format(iteration))
-        bus_trips = pd.read_csv(s3path + "/ITERS/it.{0}/{0}.passengerPerTripBus.csv".format(iteration))
-        sub_trips = pd.read_csv(s3path + "/ITERS/it.{0}/{0}.passengerPerTripRail.csv".format(iteration))
+
+        def read_csv(filename):
+            file_url = s3path + "/ITERS/it.{0}/{0}.{1}.csv".format(iteration, filename)
+            return pd.read_csv(file_url)
+
+        car_trips = read_csv('passengerPerTripCar')
+        bus_trips = read_csv('passengerPerTripBus')
+        sub_trips = read_csv('passengerPerTripRail')
 
         car_trips_sum = get_sum_of_passenger_per_trip(car_trips, ignore_hour_0=False)
         bus_trips_sum = get_sum_of_passenger_per_trip(bus_trips, ignore_hour_0=True)
@@ -896,22 +901,29 @@ def compare_ridership_vs_baserun_and_benchmark(s3url_run, s3url_base_run):
 
         return car_trips_sum, bus_trips_sum, sub_trips_sum
 
-    (base_car, base_bus, base_sub) = get_car_bus_subway_trips(s3url_base_run, 10)
-    (minus_car, minus_bus, minus_sub) = get_car_bus_subway_trips(s3url_run, 10)
+    (base_car, base_bus, base_sub) = get_car_bus_subway_trips(s3url_base_run, iteration)
 
-    def calc_diff(base_run_val, minus_run_val):
-        return (minus_run_val - base_run_val) / base_run_val * 100
+    graph_data = benchmark_mta_info.copy()
 
-    diff_transit = calc_diff(base_sub + base_bus, minus_sub + minus_bus)
-    diff_sub = calc_diff(base_sub, minus_sub)
-    diff_bus = calc_diff(base_bus, minus_bus)
-    diff_car = calc_diff(base_car, minus_car)
+    def add_comparison(s3url_run, title):
+        (minus_car, minus_bus, minus_sub) = get_car_bus_subway_trips(s3url_run, iteration)
 
-    benchmark_mta_info.append(['difference between baseline and run', diff_sub, diff_bus, diff_car, diff_transit])
+        def calc_diff(base_run_val, minus_run_val):
+            return (minus_run_val - base_run_val) / base_run_val * 100
 
-    result = pd.DataFrame(benchmark_mta_info, columns=columns)
+        diff_transit = calc_diff(base_sub + base_bus, minus_sub + minus_bus)
+        diff_sub = calc_diff(base_sub, minus_sub)
+        diff_bus = calc_diff(base_bus, minus_bus)
+        diff_car = calc_diff(base_car, minus_car)
+
+        graph_data.append(['baseline vs {0}'.format(title), diff_sub, diff_bus, diff_car, diff_transit])
+
+    for (title, s3url) in run_title_to_s3url:
+        add_comparison(s3url, title)
+
+    result = pd.DataFrame(graph_data, columns=columns)
     ax = result.groupby('date').sum().plot(kind='bar', figsize=(20, 5), rot=15)
-    ax.set_title('Comparison of difference between baseline run and run and real data from MTI.info')
+    ax.set_title('Comparison of difference vs baseline and real data from MTI.info')
 
     def add_hline(at_value):
         ax.axhline(at_value, color='black', linewidth=0.4)
