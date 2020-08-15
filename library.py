@@ -694,6 +694,7 @@ def diff_people_in(current, base):
     c = get_people_in(current)
     b.name = 'base'
     c.name = 'current'
+
     t = pd.concat([b, c], axis=1)
     t['increase'] = t['current'] - t['base']
 
@@ -784,6 +785,147 @@ def get_default_and_emergency_parkings(s3url, iteration):
     res_df = filtered_df.groupby(['TAZ']).count().reset_index()[['TAZ', 'timeBin']] \
         .rename(columns={'timeBin': 'count'})
     return res_df
+
+
+def load_modechoices(events_file_path, chunksize=100000):
+    start_time = time.time()
+    df = pd.concat(
+        [df[df['type'] == 'ModeChoice'] for df in pd.read_csv(events_file_path, low_memory=False, chunksize=chunksize)])
+    print("events file url:", events_file_path)
+    print("modechoice loading took %s seconds" % (time.time() - start_time))
+    return df
+
+
+def analyze_fake_walkers(s3url, iteration, min_length=0):
+    s3path = get_output_path_from_s3_url(s3url)
+    events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
+    modechoice = load_modechoices(events_file_path)
+
+    fake_walkers = modechoice[(modechoice['mode'] == 'walk') &
+                              (modechoice['time'] >= 21600) &
+                              (modechoice['time'] <= 72000) &
+                              (modechoice['length'] >= min_length) &
+                              ((modechoice['availableAlternatives'] == 'WALK') | (
+                                  modechoice['availableAlternatives'].isnull()))]
+
+    real_walkers = modechoice[(modechoice['mode'] == 'walk') &
+                              (modechoice['length'] >= min_length) &
+                              (modechoice['availableAlternatives'].notnull()) &
+                              (modechoice['availableAlternatives'] != 'WALK') &
+                              (modechoice['availableAlternatives'].str.contains('WALK'))]
+
+    def get_axes(rows, cols, sizex=24, sizey=4):
+        fig, axs = plt.subplots(rows, cols, figsize=(sizex, sizey * rows))
+        fig.tight_layout()
+        fig.subplots_adjust(wspace=0.2, hspace=0.2)
+        return axs
+
+    (ax1, ax2) = get_axes(1, 2)
+
+    fake_walkers['length'].hist(bins=200, ax=ax1, alpha=0.3, label='fake walkers')
+    real_walkers['length'].hist(bins=200, ax=ax1, alpha=0.3, label='real walkers')
+    ax1.legend()
+    ax1.set_title("Trip length histogram. Fake vs Real walkers. Min length of trip is {0}".format(min_length))
+    ax1.axvline(5000, color="black", linestyle="--")
+
+    fake_walkers['length'].hist(bins=200, ax=ax2, log=True, alpha=0.3, label='fake walkers')
+    real_walkers['length'].hist(bins=200, ax=ax2, log=True, alpha=0.3, label='real walkers')
+    ax2.legend()
+    ax2.set_title(
+        "Trip length histogram. Fake vs Real walkers. Logarithmic scale. Min length of trip is {0}".format(min_length))
+    ax2.axvline(5000, color="black", linestyle="--")
+
+    number_of_top_alternatives = 5
+    walkers_by_alternative = real_walkers.groupby('availableAlternatives')['length'].count().sort_values(
+        ascending=False)
+    top_alternatives = set(
+        walkers_by_alternative.reset_index()['availableAlternatives'].head(number_of_top_alternatives))
+
+    (ax1, ax2) = get_axes(2, 1)
+
+    for alternative in top_alternatives:
+        selected = real_walkers[real_walkers['availableAlternatives'] == alternative]['length']
+        selected.hist(bins=5, ax=ax1, alpha=0.4, linewidth=4, label=alternative)
+        selected.hist(bins=5, ax=ax2, log=True, histtype='step', linewidth=4, label=alternative)
+
+    ax1.set_title("Length histogram of top X alternatives of real walkers")
+    ax1.legend()
+    ax2.set_title("Length histogram of top X alternatives of real walkers. Logarithmic scale")
+    ax2.legend()
+
+    number_of_fake_walkers = fake_walkers.shape[0]
+    number_of_real_walkers = real_walkers.shape[0]
+    number_of_all_modechoice = modechoice.shape[0]
+
+    print('number of all modechoice events', number_of_all_modechoice)
+    print('number of real walkers, real walkers of all modechoice events :')
+    print(number_of_real_walkers, number_of_real_walkers / number_of_all_modechoice)
+    print('number of FAKE walkers, FAKE walkers of all modechoice events :')
+    print(number_of_fake_walkers, number_of_fake_walkers / number_of_all_modechoice)
+
+
+def compare_ridership_vs_baserun_and_benchmark(s3url_run, s3url_base_run):
+    columns = ['date', 'subway', 'bus', 'car', 'transit']
+    benchmark_mta_info = [['07/01/2020', -79.60, -49, -16.20, -71.0],
+                          ['06/03/2020', -87.60, -66, -37.40, -81.5],
+                          ['05/06/2020', -90.70, -75, -52.30, -86.3],
+                          ['04/01/2020', -90.60, -77, -63.20, -86.8]]
+
+    def get_sum_of_passenger_per_trip(df, ignore_hour_0=True):
+        sum_df = df.sum()
+        total_sum = 0
+
+        for column in df.columns:
+            if column == 'hours':
+                continue
+            if ignore_hour_0 and column == '0':
+                continue
+            total_sum = total_sum + sum_df[column]
+
+        return total_sum
+
+    def get_car_bus_subway_trips(s3url, iteration):
+        s3path = get_output_path_from_s3_url(s3url)
+        car_trips = pd.read_csv(s3path + "/ITERS/it.{0}/{0}.passengerPerTripCar.csv".format(iteration))
+        bus_trips = pd.read_csv(s3path + "/ITERS/it.{0}/{0}.passengerPerTripBus.csv".format(iteration))
+        sub_trips = pd.read_csv(s3path + "/ITERS/it.{0}/{0}.passengerPerTripRail.csv".format(iteration))
+
+        car_trips_sum = get_sum_of_passenger_per_trip(car_trips, ignore_hour_0=False)
+        bus_trips_sum = get_sum_of_passenger_per_trip(bus_trips, ignore_hour_0=True)
+        sub_trips_sum = get_sum_of_passenger_per_trip(sub_trips, ignore_hour_0=True)
+
+        return car_trips_sum, bus_trips_sum, sub_trips_sum
+
+    (base_car, base_bus, base_sub) = get_car_bus_subway_trips(s3url_base_run, 10)
+    (minus_car, minus_bus, minus_sub) = get_car_bus_subway_trips(s3url_run, 10)
+
+    def calc_diff(base_run_val, minus_run_val):
+        return (minus_run_val - base_run_val) / base_run_val * 100
+
+    diff_transit = calc_diff(base_sub + base_bus, minus_sub + minus_bus)
+    diff_sub = calc_diff(base_sub, minus_sub)
+    diff_bus = calc_diff(base_bus, minus_bus)
+    diff_car = calc_diff(base_car, minus_car)
+
+    benchmark_mta_info.append(['difference between baseline and run', diff_sub, diff_bus, diff_car, diff_transit])
+
+    result = pd.DataFrame(benchmark_mta_info, columns=columns)
+    ax = result.groupby('date').sum().plot(kind='bar', figsize=(20, 5), rot=15)
+    ax.set_title('Comparison of difference between baseline run and run and real data from MTI.info')
+
+    def add_hline(at_value):
+        ax.axhline(at_value, color='black', linewidth=0.4)
+
+    add_hline(-20)
+    add_hline(-40)
+    add_hline(-60)
+    add_hline(-80)
+
+
+def get_average_car_speed(s3url, iteration):
+    s3path = get_output_path_from_s3_url(s3url)
+    average_speed = pd.read_csv(s3path + "/AverageCarSpeed.csv")
+    return average_speed[average_speed['iteration'] == iteration]['speed'].median()
 
 
 nyc_volumes_benchmark_date = '2018-04-11'
