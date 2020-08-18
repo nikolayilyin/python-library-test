@@ -250,16 +250,6 @@ def plot_traffic_count(date):
     agg_per_hour_df.plot(x='hour', y='count', title='Date is %s' % date)
 
 
-def load_activity_ends(events_file_path, chunksize=100000):
-    start_time = time.time()
-    df = pd.concat(
-        [df[df['type'] == 'actend'] for df in pd.read_csv(events_file_path, low_memory=False, chunksize=chunksize)])
-    df['hour'] = (df['time'] / 3600).astype(int)
-    print("events file url:", events_file_path)
-    print("activity ends loading took %s seconds" % (time.time() - start_time))
-    return df
-
-
 def calc_sum_of_link_stats(link_stats_file_path, chunksize=100000):
     start_time = time.time()
     df = pd.concat([df.groupby('hour')['volume'].sum() for df in
@@ -311,65 +301,6 @@ def plot_volumes_comparison_on_axs(s3path, iteration, ax1, ax2):
     ax22 = ax2.twinx()  # to plot things on the same graph but with different Y axis
     ax22.plot(range(0, 24), activity_ends.groupby('hour')['hour'].count()[0:24], color=color_act_ends)
     ax22.tick_params(axis='y', labelcolor=color_act_ends)
-
-
-def parse_config(config_url):
-    config = urllib.request.urlopen(config_url)
-
-    config_keys = ["flowCapacityFactor", "speedScalingFactor", "quick_fix_minCarSpeedInMetersPerSecond",
-                   "activitySimEnabled", "transitCapacity",
-                   "minimumRoadSpeedInMetersPerSecond", "fractionOfInitialVehicleFleet",
-                   "agentSampleSizeAsFractionOfPopulation",
-                   "simulationName", "directory", "generate_secondary_activities", "lastIteration",
-                   "fractionOfPeopleWithBicycle",
-                   "parkingStallCountScalingFactor", "parkingPriceMultiplier", "parkingCostScalingFactor", "queryDate",
-                   "transitPrice",
-                   "maxLinkLengthToApplySpeedScalingFactor"]
-    intercept_keys = ["bike_intercept", "car_intercept", "drive_transit_intercept", "ride_hail_intercept",
-                      "ride_hail_pooled_intercept", "ride_hail_transit_intercept", "walk_intercept",
-                      "walk_transit_intercept", "transfer"]
-
-    config_map = {}
-    default_value = ""
-
-    for conf_key in config_keys:
-        config_map[conf_key] = default_value
-
-    def set_value(key, line_value):
-        value = line_value.strip().replace("\"", "")
-
-        if key not in config_map:
-            config_map[key] = value
-        else:
-            old_val = config_map[key]
-            if old_val == default_value or old_val.strip() == value.strip():
-                config_map[key] = value
-            else:
-                print("an attempt to rewrite config value with key:", key)
-                print("   value in the map  \t", old_val)
-                print("   new rejected value\t", value)
-
-    physsim_names = ['JDEQSim', 'BPRSim', 'PARBPRSim', 'CCHRoutingAssignment']
-
-    def look_for_physsim_type(config_line):
-        for physsim_name in physsim_names:
-            if 'name={}'.format(physsim_name) in config_line:
-                set_value("physsim_type", "physsim_type = {}".format(physsim_name))
-
-    for b_line in config.readlines():
-        line = b_line.decode("utf-8").strip()
-
-        look_for_physsim_type(line)
-
-        for ckey in config_keys:
-            if ckey + "=" in line or ckey + "\"=" in line:
-                set_value(ckey, line)
-
-        for ikey in intercept_keys:
-            if ikey in line:
-                set_value(ikey, line)
-
-    return config_map
 
 
 def get_calibration_text_data(s3url):
@@ -796,75 +727,68 @@ def load_modechoices(events_file_path, chunksize=100000):
     return df
 
 
-def analyze_fake_walkers(s3url, iteration, min_length=0):
-    s3path = get_output_path_from_s3_url(s3url)
-    events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
-    modechoice = load_modechoices(events_file_path)
+def parse_config(config_url, complain=True):
+    config = urllib.request.urlopen(config_url)
 
-    fake_walkers = modechoice[(modechoice['mode'] == 'walk') &
-                              (modechoice['time'] >= 21600) &
-                              (modechoice['time'] <= 72000) &
-                              (modechoice['length'] >= min_length) &
-                              ((modechoice['availableAlternatives'] == 'WALK') | (
-                                  modechoice['availableAlternatives'].isnull()))]
+    config_keys = ["flowCapacityFactor", "speedScalingFactor", "quick_fix_minCarSpeedInMetersPerSecond",
+                   "activitySimEnabled", "transitCapacity",
+                   "minimumRoadSpeedInMetersPerSecond", "fractionOfInitialVehicleFleet",
+                   "agentSampleSizeAsFractionOfPopulation",
+                   "simulationName", "directory", "generate_secondary_activities", "lastIteration",
+                   "fractionOfPeopleWithBicycle",
+                   "parkingStallCountScalingFactor", "parkingPriceMultiplier", "parkingCostScalingFactor", "queryDate",
+                   "transitPrice", "transit_crowding", "transit_crowding_percentile", "additional_trip_utility",
+                   "maxLinkLengthToApplySpeedScalingFactor"]
+    intercept_keys = ["bike_intercept", "car_intercept", "drive_transit_intercept", "ride_hail_intercept",
+                      "ride_hail_pooled_intercept", "ride_hail_transit_intercept", "walk_intercept",
+                      "walk_transit_intercept", "transfer"]
 
-    real_walkers = modechoice[(modechoice['mode'] == 'walk') &
-                              (modechoice['length'] >= min_length) &
-                              (modechoice['availableAlternatives'].notnull()) &
-                              (modechoice['availableAlternatives'] != 'WALK') &
-                              (modechoice['availableAlternatives'].str.contains('WALK'))]
+    config_map = {}
+    default_value = ""
 
-    def get_axes(rows, cols, sizex=24, sizey=4):
-        fig, axs = plt.subplots(rows, cols, figsize=(sizex, sizey * rows))
-        fig.tight_layout()
-        fig.subplots_adjust(wspace=0.2, hspace=0.2)
-        return axs
+    for conf_key in config_keys:
+        config_map[conf_key] = default_value
 
-    (ax1, ax2) = get_axes(1, 2)
+    def set_value(key, line_value):
+        value = line_value.strip().replace("\"", "")
 
-    fake_walkers['length'].hist(bins=200, ax=ax1, alpha=0.3, label='fake walkers')
-    real_walkers['length'].hist(bins=200, ax=ax1, alpha=0.3, label='real walkers')
-    ax1.legend()
-    ax1.set_title("Trip length histogram. Fake vs Real walkers. Min length of trip is {0}".format(min_length))
-    ax1.axvline(5000, color="black", linestyle="--")
+        if key not in config_map:
+            config_map[key] = value
+        else:
+            old_val = config_map[key]
+            if old_val == default_value or old_val.strip() == value.strip():
+                config_map[key] = value
+            else:
+                if complain:
+                    print("an attempt to rewrite config value with key:", key)
+                    print("   value in the map  \t", old_val)
+                    print("   new rejected value\t", value)
 
-    fake_walkers['length'].hist(bins=200, ax=ax2, log=True, alpha=0.3, label='fake walkers')
-    real_walkers['length'].hist(bins=200, ax=ax2, log=True, alpha=0.3, label='real walkers')
-    ax2.legend()
-    ax2.set_title(
-        "Trip length histogram. Fake vs Real walkers. Logarithmic scale. Min length of trip is {0}".format(min_length))
-    ax2.axvline(5000, color="black", linestyle="--")
+    physsim_names = ['JDEQSim', 'BPRSim', 'PARBPRSim', 'CCHRoutingAssignment']
 
-    number_of_top_alternatives = 5
-    walkers_by_alternative = real_walkers.groupby('availableAlternatives')['length'].count().sort_values(
-        ascending=False)
-    top_alternatives = set(
-        walkers_by_alternative.reset_index()['availableAlternatives'].head(number_of_top_alternatives))
+    def look_for_physsim_type(config_line):
+        for physsim_name in physsim_names:
+            if 'name={}'.format(physsim_name) in config_line:
+                set_value("physsim_type", "physsim_type = {}".format(physsim_name))
 
-    (ax1, ax2) = get_axes(2, 1)
+    for b_line in config.readlines():
+        line = b_line.decode("utf-8").strip()
 
-    for alternative in top_alternatives:
-        selected = real_walkers[real_walkers['availableAlternatives'] == alternative]['length']
-        selected.hist(bins=5, ax=ax1, alpha=0.4, linewidth=4, label=alternative)
-        selected.hist(bins=5, ax=ax2, log=True, histtype='step', linewidth=4, label=alternative)
+        look_for_physsim_type(line)
 
-    ax1.set_title("Length histogram of top X alternatives of real walkers")
-    ax1.legend()
-    ax2.set_title("Length histogram of top X alternatives of real walkers. Logarithmic scale")
-    ax2.legend()
+        for ckey in config_keys:
+            if ckey + "=" in line or ckey + "\"=" in line:
+                set_value(ckey, line)
 
-    number_of_fake_walkers = fake_walkers.shape[0]
-    number_of_real_walkers = real_walkers.shape[0]
-    number_of_all_modechoice = modechoice.shape[0]
+        for ikey in intercept_keys:
+            if ikey in line:
+                set_value(ikey, line)
 
-    print('number of all modechoice events', number_of_all_modechoice)
-    print('number of real walkers, real walkers of all modechoice events :')
-    print(number_of_real_walkers, number_of_real_walkers / number_of_all_modechoice)
-    print('number of FAKE walkers, FAKE walkers of all modechoice events :')
-    print(number_of_fake_walkers, number_of_fake_walkers / number_of_all_modechoice)
+    return config_map
 
 
-def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s3url_base_run):
+def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s3url_base_run,
+                                                compare_with_benchmark=True, figsize=(20, 5), rot=15):
     columns = ['date', 'subway', 'bus', 'car', 'transit']
     benchmark_mta_info = [['07/01/2020', -79.60, -49, -16.20, -71.0],
                           ['06/03/2020', -87.60, -66, -37.40, -81.5],
@@ -884,7 +808,7 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
 
         return total_sum
 
-    def get_car_bus_subway_trips(s3url, iteration):
+    def get_car_bus_subway_trips(s3url):
         s3path = get_output_path_from_s3_url(s3url)
 
         def read_csv(filename):
@@ -901,12 +825,15 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
 
         return car_trips_sum, bus_trips_sum, sub_trips_sum
 
-    (base_car, base_bus, base_sub) = get_car_bus_subway_trips(s3url_base_run, iteration)
+    (base_car, base_bus, base_sub) = get_car_bus_subway_trips(s3url_base_run)
 
-    graph_data = benchmark_mta_info.copy()
+    if compare_with_benchmark:
+        graph_data = benchmark_mta_info.copy()
+    else:
+        graph_data = []
 
     def add_comparison(s3url_run, title):
-        (minus_car, minus_bus, minus_sub) = get_car_bus_subway_trips(s3url_run, iteration)
+        (minus_car, minus_bus, minus_sub) = get_car_bus_subway_trips(s3url_run)
 
         def calc_diff(base_run_val, minus_run_val):
             return (minus_run_val - base_run_val) / base_run_val * 100
@@ -916,22 +843,167 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
         diff_bus = calc_diff(base_bus, minus_bus)
         diff_car = calc_diff(base_car, minus_car)
 
-        graph_data.append(['baseline vs {0}'.format(title), diff_sub, diff_bus, diff_car, diff_transit])
+        graph_data.append(['{0}'.format(title), diff_sub, diff_bus, diff_car, diff_transit])
 
-    for (title, s3url) in run_title_to_s3url:
-        add_comparison(s3url, title)
+    for (beam_title, beam_s3url) in run_title_to_s3url:
+        add_comparison(beam_s3url, beam_title)
 
     result = pd.DataFrame(graph_data, columns=columns)
-    ax = result.groupby('date').sum().plot(kind='bar', figsize=(20, 5), rot=15)
+    ax = result.groupby('date').sum().plot(kind='bar', figsize=figsize, rot=rot)
     ax.set_title('Comparison of difference vs baseline and real data from MTI.info')
+    ax.legend(loc='upper left', fancybox=True, framealpha=0.9)
 
-    def add_hline(at_value):
-        ax.axhline(at_value, color='black', linewidth=0.4)
+    ax.grid('on', which='major', axis='y')
 
-    add_hline(-20)
-    add_hline(-40)
-    add_hline(-60)
-    add_hline(-80)
+
+def analyze_mode_choice_changes(title_to_s3url, benchmark_url):
+    # def get_realized_modes(s3url, data_file_name='referenceRealizedModeChoice.csv'):
+    def get_realized_modes(s3url, data_file_name='realizedModeChoice.csv'):
+        modes = ['bike', 'car', 'cav', 'drive_transit', 'ride_hail',
+                 'ride_hail_pooled', 'ride_hail_transit', 'walk', 'walk_transit']
+
+        path = get_output_path_from_s3_url(s3url) + "/" + data_file_name
+        df = pd.read_csv(path, names=modes)
+        tail = df.tail(1).copy()
+
+        for mode in modes:
+            tail[mode] = tail[mode].astype(float)
+
+        return tail
+
+    benchmark = get_realized_modes(benchmark_url).reset_index(drop=True)
+
+    modechoices_difference = []
+    modechoices_diff_in_percentage = []
+
+    for (name, url) in title_to_s3url:
+        modechoice = get_realized_modes(url).reset_index(drop=True)
+        modechoice = modechoice.sub(benchmark, fill_value=0)
+        modechoice_perc = modechoice / benchmark * 100
+
+        modechoice['name'] = name
+        modechoice['sim_url'] = url
+        modechoices_difference.append(modechoice)
+
+        modechoice_perc['name'] = name
+        modechoice_perc['sim_url'] = url
+        modechoices_diff_in_percentage.append(modechoice_perc)
+
+    df_diff = pd.concat(modechoices_difference)
+    df_diff_perc = pd.concat(modechoices_diff_in_percentage)
+
+    _, (ax1, ax2) = plt.subplots(2, 1, sharex='all', figsize=(20, 8))
+
+    df_diff.set_index('name').plot(kind='bar', ax=ax1, rot=65)
+    df_diff_perc.set_index('name').plot(kind='bar', ax=ax2, rot=65)
+
+    ax1.axhline(0, color='black', linewidth=0.4)
+    ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+    ax1.set_title('difference between run and benchmark in absolute numbers')
+    ax1.grid('on', which='major', axis='y')
+
+    ax2.axhline(0, color='black', linewidth=0.4)
+    ax2.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+    ax2.set_title('difference between run and benchmark in percentage')
+    ax2.grid('on', which='major', axis='y')
+
+    plt.suptitle("BEAM run minus benchmark run. realizedModeChoice.csv")
+    return benchmark
+
+
+def load_activity_ends(events_file_path, chunksize=100000):
+    start_time = time.time()
+    df = pd.concat(
+        [df[df['type'] == 'actend'] for df in pd.read_csv(events_file_path, low_memory=False, chunksize=chunksize)])
+    df['hour'] = (df['time'] / 3600).astype(int)
+    print("events file url:", events_file_path)
+    print("activity ends loading took %s seconds" % (time.time() - start_time))
+    return df
+
+
+def load_activities(events_file_path, chunksize=100000):
+    start_time = time.time()
+    df = pd.concat(
+        [df[(df['type'] == 'actstart') | (df['type'] == 'actend')] for df in
+         pd.read_csv(events_file_path, low_memory=False, chunksize=chunksize)])
+    df['hour'] = (df['time'] / 3600).astype(int)
+    print("events file url:", events_file_path)
+    print("actstart and actend events loading took %s seconds" % (time.time() - start_time))
+    return df
+
+
+def analyze_fake_walkers(s3url, iteration, min_length=0, title=""):
+    s3path = get_output_path_from_s3_url(s3url)
+    events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
+    modechoice = load_modechoices(events_file_path)
+
+    fake_walkers = modechoice[(modechoice['mode'] == 'walk') &
+                              (modechoice['time'] >= 21600) &
+                              (modechoice['time'] <= 72000) &
+                              (modechoice['length'] >= min_length) &
+                              ((modechoice['availableAlternatives'] == 'WALK') | (
+                                  modechoice['availableAlternatives'].isnull()))]
+
+    real_walkers = modechoice[(modechoice['mode'] == 'walk') &
+                              (modechoice['length'] >= min_length) &
+                              (modechoice['availableAlternatives'].notnull()) &
+                              (modechoice['availableAlternatives'] != 'WALK') &
+                              (modechoice['availableAlternatives'].str.contains('WALK'))]
+
+    def get_axes(rows, cols, sizex=24, sizey=4, suptitle=""):
+        fig, axes = plt.subplots(rows, cols, figsize=(sizex, sizey * rows))
+        fig.tight_layout()
+        fig.subplots_adjust(wspace=0.05, hspace=0.2)
+        fig.suptitle(suptitle, y=1.11)
+        return axes
+
+    axs = get_axes(2, 2, suptitle=title)
+
+    ax1 = axs[0, 0]
+    ax2 = axs[0, 1]
+
+    fake_walkers['length'].hist(bins=200, ax=ax1, alpha=0.3, label='fake walkers')
+    real_walkers['length'].hist(bins=200, ax=ax1, alpha=0.3, label='real walkers')
+    ax1.legend(loc='upper right', prop={'size': 10})
+    ax1.set_title("Trip length histogram. Fake vs Real walkers. Min length of trip is {0}".format(min_length))
+    ax1.axvline(5000, color="black", linestyle="--")
+
+    fake_walkers['length'].hist(bins=200, ax=ax2, log=True, alpha=0.3, label='fake walkers')
+    real_walkers['length'].hist(bins=200, ax=ax2, log=True, alpha=0.3, label='real walkers')
+    ax2.legend(loc='upper right', prop={'size': 10})
+    ax2.set_title(
+        "Trip length histogram. Fake vs Real walkers. Logarithmic scale. Min length of trip is {0}".format(min_length))
+    ax2.axvline(5000, color="black", linestyle="--")
+
+    number_of_top_alternatives = 5
+    walkers_by_alternative = real_walkers.groupby('availableAlternatives')['length'].count().sort_values(
+        ascending=False)
+    top_alternatives = set(
+        walkers_by_alternative.reset_index()['availableAlternatives'].head(number_of_top_alternatives))
+
+    ax1 = axs[1, 0]
+    ax2 = axs[1, 1]
+
+    for alternative in top_alternatives:
+        selected = real_walkers[real_walkers['availableAlternatives'] == alternative]['length']
+        selected.hist(bins=200, ax=ax1, alpha=0.4, linewidth=4, label=alternative)
+        selected.hist(bins=20, ax=ax2, log=True, histtype='step', linewidth=4, label=alternative)
+
+    ax1.set_title("Length histogram of top {} alternatives of real walkers".format(number_of_top_alternatives))
+    ax1.legend(loc='upper right', prop={'size': 10})
+    ax2.set_title(
+        "Length histogram of top {} alternatives of real walkers. Logarithmic scale".format(number_of_top_alternatives))
+    ax2.legend(loc='upper right', prop={'size': 10})
+
+    number_of_fake_walkers = fake_walkers.shape[0]
+    number_of_real_walkers = real_walkers.shape[0]
+    number_of_all_modechoice = modechoice.shape[0]
+
+    print('number of all modechoice events', number_of_all_modechoice)
+    print('number of real walkers, real walkers of all modechoice events :')
+    print(number_of_real_walkers, number_of_real_walkers / number_of_all_modechoice)
+    print('number of FAKE walkers, FAKE walkers of all modechoice events :')
+    print(number_of_fake_walkers, number_of_fake_walkers / number_of_all_modechoice)
 
 
 def get_average_car_speed(s3url, iteration):
