@@ -741,7 +741,8 @@ def parse_config(config_url, complain=True):
                    "fractionOfPeopleWithBicycle",
                    "parkingStallCountScalingFactor", "parkingPriceMultiplier", "parkingCostScalingFactor", "queryDate",
                    "transitPrice", "transit_crowding", "transit_crowding_percentile", "additional_trip_utility",
-                   "maxLinkLengthToApplySpeedScalingFactor"]
+                   "maxLinkLengthToApplySpeedScalingFactor",
+                   "transit_crowding_VOT_multiplier", "transit_crowding_VOT_cutoff"]
     intercept_keys = ["bike_intercept", "car_intercept", "drive_transit_intercept", "ride_hail_intercept",
                       "ride_hail_pooled_intercept", "ride_hail_transit_intercept", "walk_intercept",
                       "walk_transit_intercept", "transfer"]
