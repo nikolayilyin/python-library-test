@@ -999,6 +999,18 @@ def analyze_fake_walkers(s3url, iteration, min_length=0, title=""):
     print(number_of_fake_walkers, number_of_fake_walkers / number_of_all_modechoice)
 
 
+def plot_modechoice_distance_distribution(s3url, iteration):
+    s3path = get_output_path_from_s3_url(s3url)
+    events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
+
+    start_time = time.time()
+    events_file = pd.concat([df[df['type'] == 'ModeChoice']
+                             for df in pd.read_csv(events_file_path, low_memory=False, chunksize=100000)])
+    print("modechoice loading took %s seconds" % (time.time() - start_time))
+
+    events_file['length'].hist(bins=100, by=events_file['mode'], figsize=(20, 12), rot=10, sharex=True)
+
+
 def get_average_car_speed(s3url, iteration):
     s3path = get_output_path_from_s3_url(s3url)
     average_speed = pd.read_csv(s3path + "/AverageCarSpeed.csv")
