@@ -331,8 +331,10 @@ def get_calibration_png_graphs(s3url, first_iteration=0, last_iteration=0, png_t
                     s3path + "/referenceRealizedModeChoice_commute.png")
 
 
-def plot_volumes_comparison_on_axs(s3url, iteration, suptitle="", simulation_volumes=None, activity_ends=None):
-    s3path = get_output_path_from_s3_url(s3url)
+def plot_volumes_comparison_on_axs(s3url, iteration, suptitle="", simulation_volumes=None, activity_ends=None,
+                                   s3path=None):
+    if not s3path:
+        s3path = get_output_path_from_s3_url(s3url)
 
     def calc_sum_of_link_stats(link_stats_file_path, chunksize=100000):
         start_time = time.time()
