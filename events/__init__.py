@@ -1,1 +1,1 @@
-from .events import *
+from .module import *

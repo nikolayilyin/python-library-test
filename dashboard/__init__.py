@@ -1,1 +1,1 @@
-from .ridehail import RideHailDashboard
+from .module import RideHailDashboard
