@@ -1,6 +1,6 @@
 from library import get_output_path_from_s3_url
 import pandas as pd
-
+import time
 
 def load_events(events_path, chunk_filter, chunksize=100000):
     start_time = time.time()
