@@ -1,4 +1,4 @@
-from library import get_output_path_from_s3_url
+import library
 import pandas as pd
 import time
 
@@ -26,7 +26,7 @@ def load_events(events_path, chunk_filter, chunksize=100000):
 
 
 def load_events_from_s3_chunked(s3url, iteration, chunk_filter, chunksize=100000):
-    s3path = get_output_path_from_s3_url(s3url)
+    s3path = library.get_output_path_from_s3_url(s3url)
     events_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
     return load_events(events_path, chunk_filter, chunksize)
 

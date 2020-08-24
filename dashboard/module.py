@@ -1,11 +1,11 @@
-from library import get_output_path_from_s3_url
+import library
 import pandas as pd
 
 
 class RideHailDashboard:
     def __init__(self, s3url, iteration):
         # General code to get output path fro S3 URL
-        s3path = get_output_path_from_s3_url(s3url)
+        s3path = library.get_output_path_from_s3_url(s3url)
         self.passenger_per_trip_df = pd.read_csv(
             s3path + "/ITERS/it.{0}/{0}.passengerPerTripRideHail.csv".format(iteration))
         self.fleet_size = len(
