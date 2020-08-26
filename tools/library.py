@@ -1,6 +1,7 @@
 """
 this is compilation of useful functions that might be helpful to analyse BEAM-related data
 """
+from urllib.error import HTTPError
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -335,84 +336,6 @@ def get_calibration_png_graphs(s3url, first_iteration=0, last_iteration=0, png_t
                     s3path + "/referenceRealizedModeChoice_commute.png")
 
 
-def plot_volumes_comparison_on_axs(s3url, iteration, suptitle="", simulation_volumes=None, activity_ends=None,
-                                   s3path=None):
-    if not s3path:
-        s3path = get_output_path_from_s3_url(s3url)
-
-    def calc_sum_of_link_stats(link_stats_file_path, chunksize=100000):
-        start_time = time.time()
-        df = pd.concat([df.groupby('hour')['volume'].sum() for df in
-                        pd.read_csv(link_stats_file_path, low_memory=False, chunksize=chunksize)])
-        df = df.groupby('hour').sum().to_frame(name='sum')
-        # print("link stats url:", link_stats_file_path)
-        print("link stats downloading and calculation took %s seconds" % (time.time() - start_time))
-        return df
-
-    def load_activity_ends(events_file_path, chunksize=100000):
-        start_time = time.time()
-        df = pd.concat(
-            [df[df['type'] == 'actend'] for df in pd.read_csv(events_file_path, low_memory=False, chunksize=chunksize)])
-        df['hour'] = (df['time'] / 3600).astype(int)
-        # print("events file url:", events_file_path)
-        print("activity ends loading took %s seconds" % (time.time() - start_time))
-        return df
-
-    if not simulation_volumes:
-        linkstats_path = s3path + "/ITERS/it.{0}/{0}.linkstats.csv.gz".format(iteration)
-        simulation_volumes = calc_sum_of_link_stats(linkstats_path)
-
-    if not activity_ends:
-        events_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
-        activity_ends = load_activity_ends(events_path)
-
-    color_benchmark = 'tab:red'
-    color_volume = 'tab:green'
-    color_act_ends = 'tab:blue'
-
-    fig1, (ax1, ax2) = plt.subplots(1, 2, figsize=(25, 7))
-    fig1.tight_layout(pad=0.1)
-    fig1.subplots_adjust(wspace=0.25, hspace=0.1)
-    plt.xticks(np.arange(0, 24, 2))
-    plt.suptitle(suptitle, y=1.05, fontsize=17)
-
-    # ####
-    # volumes comparison
-    ax1.set_title('Volume SUM comparison with benchmark from {}. iter {}'.format(nyc_volumes_benchmark_date, iteration))
-    ax1.set_xlabel('hour of day')
-
-    ax1.plot(range(0, 24), nyc_volumes_benchmark['count'], color=color_benchmark, label="benchmark")
-    ax1.plot(np.nan, color=color_volume, label="simulation volume")  # to have both legends on same axis
-    ax1.legend(loc="upper right")
-    ax1.xaxis.set_ticks(np.arange(0, 24, 1))
-
-    ax1.tick_params(axis='y', labelcolor=color_benchmark)
-
-    volume_per_hour = simulation_volumes[0:23]['sum']
-    volume_hours = list(volume_per_hour.index)
-
-    ax12 = ax1.twinx()  # to plot things on the same graph but with different Y axis
-    ax12.plot(volume_hours, volume_per_hour, color=color_volume)
-    ax12.tick_params(axis='y', labelcolor=color_volume)
-
-    # ####
-    # activity ends comparison
-    ax2.set_title('Activity ends comparison. iter {}'.format(iteration))
-    ax2.set_xlabel('hour of day')
-    ax2.xaxis.set_ticks(np.arange(0, 24, 1))
-
-    ax2.plot(range(0, 24), nyc_activity_ends_benchmark, color=color_benchmark, label='benchmark')
-    ax2.plot(np.nan, color=color_act_ends, label='# of activity ends')  # to have both legends on same axis
-    ax2.legend(loc="upper right")
-    ax2.tick_params(axis='y', labelcolor=color_benchmark)
-
-    act_ends_processed = activity_ends.groupby('hour')['hour'].count()
-    act_ends_hours = list(act_ends_processed.index)
-    ax22 = ax2.twinx()  # to plot things on the same graph but with different Y axis
-    ax22.plot(act_ends_hours, act_ends_processed, color=color_act_ends)
-    ax22.tick_params(axis='y', labelcolor=color_act_ends)
-
-
 def analyze_vehicle_passenger_by_hour(s3url, iteration):
     s3path = get_output_path_from_s3_url(s3url)
     events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
@@ -736,6 +659,90 @@ def load_modechoices(events_file_path, chunksize=100000):
     return df
 
 
+def analyze_mode_choice_changes(title_to_s3url, benchmark_url):
+    # def get_realized_modes(s3url, data_file_name='referenceRealizedModeChoice.csv'):
+    def get_realized_modes(s3url, data_file_name='realizedModeChoice.csv'):
+        modes = ['bike', 'car', 'cav', 'drive_transit', 'ride_hail',
+                 'ride_hail_pooled', 'ride_hail_transit', 'walk', 'walk_transit']
+
+        path = get_output_path_from_s3_url(s3url) + "/" + data_file_name
+        df = pd.read_csv(path, names=modes)
+        tail = df.tail(1).copy()
+
+        for mode in modes:
+            tail[mode] = tail[mode].astype(float)
+
+        return tail
+
+    benchmark = get_realized_modes(benchmark_url).reset_index(drop=True)
+
+    modechoices_difference = []
+    modechoices_diff_in_percentage = []
+
+    for (name, url) in title_to_s3url:
+        modechoice = get_realized_modes(url).reset_index(drop=True)
+        modechoice = modechoice.sub(benchmark, fill_value=0)
+        modechoice_perc = modechoice / benchmark * 100
+
+        modechoice['name'] = name
+        modechoice['sim_url'] = url
+        modechoices_difference.append(modechoice)
+
+        modechoice_perc['name'] = name
+        modechoice_perc['sim_url'] = url
+        modechoices_diff_in_percentage.append(modechoice_perc)
+
+    df_diff = pd.concat(modechoices_difference)
+    df_diff_perc = pd.concat(modechoices_diff_in_percentage)
+
+    _, (ax1, ax2) = plt.subplots(2, 1, sharex='all', figsize=(20, 8))
+
+    df_diff.set_index('name').plot(kind='bar', ax=ax1, rot=65)
+    df_diff_perc.set_index('name').plot(kind='bar', ax=ax2, rot=65)
+
+    ax1.axhline(0, color='black', linewidth=0.4)
+    ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+    ax1.set_title('difference between run and benchmark in absolute numbers')
+    ax1.grid('on', which='major', axis='y')
+
+    ax2.axhline(0, color='black', linewidth=0.4)
+    ax2.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+    ax2.set_title('difference between run and benchmark in percentage')
+    ax2.grid('on', which='major', axis='y')
+
+    plt.suptitle("BEAM run minus benchmark run. realizedModeChoice.csv")
+    return benchmark
+
+
+def load_activities(events_file_path, chunksize=100000):
+    start_time = time.time()
+    df = pd.concat(
+        [df[(df['type'] == 'actstart') | (df['type'] == 'actend')] for df in
+         pd.read_csv(events_file_path, low_memory=False, chunksize=chunksize)])
+    df['hour'] = (df['time'] / 3600).astype(int)
+    print("events file url:", events_file_path)
+    print("actstart and actend events loading took %s seconds" % (time.time() - start_time))
+    return df
+
+
+def plot_modechoice_distance_distribution(s3url, iteration):
+    s3path = get_output_path_from_s3_url(s3url)
+    events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
+
+    start_time = time.time()
+    events_file = pd.concat([df[df['type'] == 'ModeChoice']
+                             for df in pd.read_csv(events_file_path, low_memory=False, chunksize=100000)])
+    print("modechoice loading took %s seconds" % (time.time() - start_time))
+
+    events_file['length'].hist(bins=100, by=events_file['mode'], figsize=(20, 12), rot=10, sharex=True)
+
+
+def get_average_car_speed(s3url, iteration):
+    s3path = get_output_path_from_s3_url(s3url)
+    average_speed = pd.read_csv(s3path + "/AverageCarSpeed.csv")
+    return average_speed[average_speed['iteration'] == iteration]['speed'].median()
+
+
 def parse_config(config_url, complain=True):
     config = urllib.request.urlopen(config_url)
 
@@ -746,9 +753,10 @@ def parse_config(config_url, complain=True):
                    "simulationName", "directory", "generate_secondary_activities", "lastIteration",
                    "fractionOfPeopleWithBicycle",
                    "parkingStallCountScalingFactor", "parkingPriceMultiplier", "parkingCostScalingFactor", "queryDate",
-                   "transitPrice", "transit_crowding", "transit_crowding_percentile", "additional_trip_utility",
+                   "transitPrice", "transit_crowding", "transit_crowding_percentile",
                    "maxLinkLengthToApplySpeedScalingFactor",
-                   "transit_crowding_VOT_multiplier", "transit_crowding_VOT_cutoff"]
+                   "transit_crowding_VOT_multiplier", "transit_crowding_VOT_cutoff",
+                   "activity_file_path", "intercept_file_path", "additional_trip_utility"]
     intercept_keys = ["bike_intercept", "car_intercept", "drive_transit_intercept", "ride_hail_intercept",
                       "ride_hail_pooled_intercept", "ride_hail_transit_intercept", "walk_intercept",
                       "walk_transit_intercept", "transfer"]
@@ -818,14 +826,14 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
 
         return total_sum
 
-    def get_car_bus_subway_trips(run_s3url, run_iteration):
-        s3path = get_output_path_from_s3_url(run_s3url)
+    def get_car_bus_subway_trips(beam_s3url):
+        s3path = get_output_path_from_s3_url(beam_s3url)
 
         def read_csv(filename):
-            file_url = s3path + "/ITERS/it.{0}/{0}.{1}.csv".format(run_iteration, filename)
+            file_url = s3path + "/ITERS/it.{0}/{0}.{1}.csv".format(iteration, filename)
             try:
                 return pd.read_csv(file_url)
-            except:
+            except HTTPError:
                 print('was not able to download', file_url)
 
         car_trips = read_csv('passengerPerTripCar')
@@ -838,15 +846,15 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
 
         return car_trips_sum, bus_trips_sum, sub_trips_sum
 
-    (base_car, base_bus, base_sub) = get_car_bus_subway_trips(s3url_base_run, iteration)
+    (base_car, base_bus, base_sub) = get_car_bus_subway_trips(s3url_base_run)
 
     if compare_with_benchmark:
         graph_data = benchmark_mta_info.copy()
     else:
         graph_data = []
 
-    def add_comparison(s3url_run, title_run):
-        (minus_car, minus_bus, minus_sub) = get_car_bus_subway_trips(s3url_run, iteration)
+    def add_comparison(s3url_run, run_title):
+        (minus_car, minus_bus, minus_sub) = get_car_bus_subway_trips(s3url_run)
 
         def calc_diff(base_run_val, minus_run_val):
             return (minus_run_val - base_run_val) / base_run_val * 100
@@ -856,7 +864,7 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
         diff_bus = calc_diff(base_bus, minus_bus)
         diff_car = calc_diff(base_car, minus_car)
 
-        graph_data.append(['{0}'.format(title_run), diff_sub, diff_bus, diff_car, diff_transit])
+        graph_data.append(['{0}'.format(run_title), diff_sub, diff_bus, diff_car, diff_transit])
 
     for (title, s3url) in run_title_to_s3url:
         add_comparison(s3url, title)
@@ -869,88 +877,151 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
     ax.grid('on', which='major', axis='y')
 
 
-def analyze_mode_choice_changes(title_to_s3url, benchmark_url):
-    # def get_realized_modes(s3url, data_file_name='referenceRealizedModeChoice.csv'):
-    def get_realized_modes(s3url, data_file_name='realizedModeChoice.csv'):
-        modes = ['bike', 'car', 'cav', 'drive_transit', 'ride_hail',
-                 'ride_hail_pooled', 'ride_hail_transit', 'walk', 'walk_transit']
+def plot_simulation_volumes_vs_bench(s3url, iteration, ax, title="Volume SUM comparison with benchmark.",
+                                     simulation_volumes=None, s3path=None):
+    if s3path is None:
+        s3path = get_output_path_from_s3_url(s3url)
 
-        path = get_output_path_from_s3_url(s3url) + "/" + data_file_name
-        df = pd.read_csv(path, names=modes)
-        tail = df.tail(1).copy()
+    def calc_sum_of_link_stats(link_stats_file_path, chunksize=100000):
+        start_time = time.time()
+        df = pd.concat([df.groupby('hour')['volume'].sum() for df in
+                        pd.read_csv(link_stats_file_path, low_memory=False, chunksize=chunksize)])
+        df = df.groupby('hour').sum().to_frame(name='sum')
+        # print("link stats url:", link_stats_file_path)
+        print("link stats downloading and calculation took %s seconds" % (time.time() - start_time))
+        return df
 
-        for mode in modes:
-            tail[mode] = tail[mode].astype(float)
+    if simulation_volumes is None:
+        linkstats_path = s3path + "/ITERS/it.{0}/{0}.linkstats.csv.gz".format(iteration)
+        simulation_volumes = calc_sum_of_link_stats(linkstats_path)
 
-        return tail
+    color_benchmark = 'tab:red'
+    color_volume = 'tab:green'
 
-    benchmark = get_realized_modes(benchmark_url).reset_index(drop=True)
+    ax1 = ax
 
-    modechoices_difference = []
-    modechoices_diff_in_percentage = []
+    ax1.set_title('{} iter {}'.format(title, iteration))
+    ax1.set_xlabel('hour of day')
 
-    for (name, url) in title_to_s3url:
-        modechoice = get_realized_modes(url).reset_index(drop=True)
-        modechoice = modechoice.sub(benchmark, fill_value=0)
-        modechoice_perc = modechoice / benchmark * 100
+    ax1.plot(range(0, 24), nyc_volumes_benchmark['count'], color=color_benchmark, label="benchmark")
+    ax1.plot(np.nan, color=color_volume, label="simulation volume")  # to have both legends on same axis
+    ax1.legend(loc="upper right")
+    ax1.xaxis.set_ticks(np.arange(0, 24, 1))
 
-        modechoice['name'] = name
-        modechoice['sim_url'] = url
-        modechoices_difference.append(modechoice)
+    ax1.tick_params(axis='y', labelcolor=color_benchmark)
 
-        modechoice_perc['name'] = name
-        modechoice_perc['sim_url'] = url
-        modechoices_diff_in_percentage.append(modechoice_perc)
+    volume_per_hour = simulation_volumes[0:23]['sum']
+    volume_hours = list(volume_per_hour.index)
 
-    df_diff = pd.concat(modechoices_difference)
-    df_diff_perc = pd.concat(modechoices_diff_in_percentage)
+    shifted_hours = list(map(lambda x: x + 1, volume_hours))
 
-    _, (ax1, ax2) = plt.subplots(2, 1, sharex='all', figsize=(20, 8))
+    ax12 = ax1.twinx()  # to plot things on the same graph but with different Y axis
+    ax12.plot(shifted_hours, volume_per_hour, color=color_volume)
+    ax12.tick_params(axis='y', labelcolor=color_volume)
 
-    df_diff.set_index('name').plot(kind='bar', ax=ax1, rot=65)
-    df_diff_perc.set_index('name').plot(kind='bar', ax=ax2, rot=65)
-
-    ax1.axhline(0, color='black', linewidth=0.4)
-    ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
-    ax1.set_title('difference between run and benchmark in absolute numbers')
-    ax1.grid('on', which='major', axis='y')
-
-    ax2.axhline(0, color='black', linewidth=0.4)
-    ax2.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
-    ax2.set_title('difference between run and benchmark in percentage')
-    ax2.grid('on', which='major', axis='y')
-
-    plt.suptitle("BEAM run minus benchmark run. realizedModeChoice.csv")
-    return benchmark
+    return simulation_volumes
 
 
-def load_activities(events_file_path, chunksize=100000):
-    start_time = time.time()
-    df = pd.concat(
-        [df[(df['type'] == 'actstart') | (df['type'] == 'actend')] for df in
-         pd.read_csv(events_file_path, low_memory=False, chunksize=chunksize)])
-    df['hour'] = (df['time'] / 3600).astype(int)
-    print("events file url:", events_file_path)
-    print("actstart and actend events loading took %s seconds" % (time.time() - start_time))
-    return df
+def plot_activities_ends_vs_bench(s3url, iteration, ax, ax2=None, title="Activity ends comparison.", population_size=1,
+                                  activity_ends=None, s3path=None):
+    if s3path is None:
+        s3path = get_output_path_from_s3_url(s3url)
+
+    def load_activity_ends(events_file_path, chunksize=100000):
+        start_time = time.time()
+        try:
+            df = pd.concat([df[df['type'] == 'actend']
+                            for df in pd.read_csv(events_file_path, low_memory=False, chunksize=chunksize)])
+        except HTTPError:
+            raise NameError('can not download file by url:', events_file_path)
+        df['hour'] = (df['time'] / 3600).astype(int)
+        # print("events file url:", events_file_path)
+        print("activity ends loading took %s seconds" % (time.time() - start_time))
+        return df
+
+    if activity_ends is None:
+        events_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
+        activity_ends = load_activity_ends(events_path)
+
+    color_act_ends = 'tab:blue'
+
+    ax.set_title('{} iter {} [{} total act ends]'.format(title, iteration, activity_ends.shape[0]))
+    ax.set_xlabel('hour of day')
+    ax.xaxis.set_ticks(np.arange(0, 24, 1))
+
+    act_ends_24 = activity_ends[activity_ends['hour'] <= 24].copy()
+
+    act_ends_total = act_ends_24.groupby('hour')['hour'].count() / population_size
+    act_ends_hours = list(act_ends_total.index)
+
+    def plot_act_ends(ax_to_plot, act_type):
+        df = act_ends_24[act_ends_24['actType'] == act_type].groupby('hour')['hour'].count() / population_size
+        ax_to_plot.plot(df.index, df, label='# of {} ends'.format(act_type))
+
+    def plot_benchmark_and_legend(ax_to_plot):
+        color_benchmark = 'black'
+        ax_to_plot.plot(np.nan, color=color_benchmark,
+                        label='benchmark (right scale)')  # to have both legends on same axis
+
+        ax_to_plot.legend(loc="upper right")
+        ax_to_plot.tick_params(axis='y', labelcolor=color_act_ends)
+
+        ax_twinx = ax_to_plot.twinx()  # to plot things on the same graph but with different Y axis
+        ax_twinx.plot(range(0, 24), nyc_activity_ends_benchmark, color=color_benchmark)
+        ax_twinx.tick_params(axis='y', labelcolor=color_benchmark)
+
+    ax.plot(act_ends_hours, act_ends_total, color=color_act_ends, label='# of activity ends', linewidth=3)
+    plot_act_ends(ax, 'Work')
+    plot_act_ends(ax, 'Home')
+
+    plot_benchmark_and_legend(ax)
+
+    if ax2 is not None:
+        ax2.set_title('other activities')
+        ax2.set_xlabel('hour of day')
+        ax2.xaxis.set_ticks(np.arange(0, 24, 1))
+
+        plot_act_ends(ax2, 'Meal')
+        plot_act_ends(ax2, 'SocRec')
+        plot_act_ends(ax2, 'Shopping')
+        plot_act_ends(ax2, 'Other')
+
+        plot_benchmark_and_legend(ax2)
+
+    return activity_ends
 
 
-def analyze_fake_walkers(s3url, iteration, threshold=2000, title=""):
+def plot_volumes_comparison_on_axs(s3url, iteration, suptitle="", population_size=1,
+                                   simulation_volumes=None, activity_ends=None,
+                                   plot_simulation_volumes=True, plot_activities_ends=True):
+    fig1, (ax1, ax2) = plt.subplots(1, 2, figsize=(25, 7))
+    fig1.tight_layout(pad=0.1)
+    fig1.subplots_adjust(wspace=0.25, hspace=0.1)
+    plt.xticks(np.arange(0, 24, 2))
+    plt.suptitle(suptitle, y=1.05, fontsize=17)
+
+    if plot_simulation_volumes:
+        plot_simulation_volumes_vs_bench(s3url, iteration=iteration, ax=ax1,
+                                         title="Volume SUM comparison with benchmark.",
+                                         simulation_volumes=simulation_volumes)
+
+    if plot_activities_ends:
+        plot_activities_ends_vs_bench(s3url, iteration=iteration, ax=ax2, title="Activity ends comparison.",
+                                      population_size=population_size, activity_ends=activity_ends)
+
+
+def analyze_fake_walkers(s3url, iteration, threshold=2000, title="", modechoice=None):
     s3path = get_output_path_from_s3_url(s3url)
     events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
-    modechoice = load_modechoices(events_file_path)
 
-    fake_walkers = modechoice[(modechoice['mode'] == 'walk') &
-                              (modechoice['length'] >= threshold) &
-                              ((modechoice['availableAlternatives'] == 'WALK') | (
-                                  modechoice['availableAlternatives'].isnull()))]
+    if modechoice is None:
+        modechoice = load_modechoices(events_file_path)
 
-    real_walkers = modechoice[(modechoice['mode'] == 'walk') & (
-            (modechoice['length'] < threshold) |
-            ((modechoice['availableAlternatives'].notnull()) &
-             (modechoice['availableAlternatives'] != 'WALK') &
-             (modechoice['availableAlternatives'].str.contains('WALK')))
-    )]
+    is_fake = (modechoice['length'] >= threshold) & (
+                (modechoice['availableAlternatives'] == 'WALK') | (modechoice['availableAlternatives'].isnull()))
+
+    fake_walkers = modechoice[(modechoice['mode'] == 'walk') & is_fake]
+    real_walkers = modechoice[(modechoice['mode'] == 'walk') & (~is_fake)]
 
     fig, axs = plt.subplots(2, 2, figsize=(24, 4 * 2))
     fig.tight_layout()
@@ -963,27 +1034,28 @@ def analyze_fake_walkers(s3url, iteration, threshold=2000, title=""):
     fake_walkers['length'].hist(bins=200, ax=ax1, alpha=0.3, label='fake walkers')
     real_walkers['length'].hist(bins=200, ax=ax1, alpha=0.3, label='real walkers')
     ax1.legend(loc='upper right', prop={'size': 10})
-    ax1.set_title("Trip length histogram. Fake vs Real walkers. Min length of trip is {0}".format(min_length))
+    ax1.set_title("Trip length histogram. Fake vs Real walkers. Min length of trip is {0}".format(threshold))
     ax1.axvline(5000, color="black", linestyle="--")
 
     fake_walkers['length'].hist(bins=200, ax=ax2, log=True, alpha=0.3, label='fake walkers')
     real_walkers['length'].hist(bins=200, ax=ax2, log=True, alpha=0.3, label='real walkers')
     ax2.legend(loc='upper right', prop={'size': 10})
     ax2.set_title(
-        "Trip length histogram. Fake vs Real walkers. Logarithmic scale. Min length of trip is {0}".format(min_length))
+        "Trip length histogram. Fake vs Real walkers. Logarithmic scale. Min length of trip is {0}".format(threshold))
     ax2.axvline(5000, color="black", linestyle="--")
-
-    number_of_top_alternatives = 5
-    walkers_by_alternative = real_walkers.groupby('availableAlternatives')['length'].count().sort_values(
-        ascending=False)
-    top_alternatives = set(
-        walkers_by_alternative.reset_index()['availableAlternatives'].head(number_of_top_alternatives))
 
     ax1 = axs[1, 0]
     ax2 = axs[1, 1]
 
+    long_real_walkers = real_walkers[real_walkers['length'] >= threshold]
+    number_of_top_alternatives = 5
+    walkers_by_alternative = long_real_walkers.groupby('availableAlternatives')['length'].count().sort_values(
+        ascending=False)
+    top_alternatives = set(
+        walkers_by_alternative.reset_index()['availableAlternatives'].head(number_of_top_alternatives))
+
     for alternative in top_alternatives:
-        selected = real_walkers[real_walkers['availableAlternatives'] == alternative]['length']
+        selected = long_real_walkers[long_real_walkers['availableAlternatives'] == alternative]['length']
         selected.hist(bins=200, ax=ax1, alpha=0.4, linewidth=4, label=alternative)
         selected.hist(bins=20, ax=ax2, log=True, histtype='step', linewidth=4, label=alternative)
 
@@ -1003,23 +1075,7 @@ def analyze_fake_walkers(s3url, iteration, threshold=2000, title=""):
     print('number of FAKE walkers, FAKE walkers of all modechoice events :')
     print(number_of_fake_walkers, number_of_fake_walkers / number_of_all_modechoice)
 
-
-def plot_modechoice_distance_distribution(s3url, iteration):
-    s3path = get_output_path_from_s3_url(s3url)
-    events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
-
-    start_time = time.time()
-    events_file = pd.concat([df[df['type'] == 'ModeChoice']
-                             for df in pd.read_csv(events_file_path, low_memory=False, chunksize=100000)])
-    print("modechoice loading took %s seconds" % (time.time() - start_time))
-
-    events_file['length'].hist(bins=100, by=events_file['mode'], figsize=(20, 12), rot=10, sharex=True)
-
-
-def get_average_car_speed(s3url, iteration):
-    s3path = get_output_path_from_s3_url(s3url)
-    average_speed = pd.read_csv(s3path + "/AverageCarSpeed.csv")
-    return average_speed[average_speed['iteration'] == iteration]['speed'].median()
+    return modechoice
 
 
 nyc_volumes_benchmark_date = '2018-04-11'
