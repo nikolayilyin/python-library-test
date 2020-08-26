@@ -15,6 +15,7 @@ from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from io import StringIO
 
+
 # import dashboard.ridehail_dashboard
 # import events.events
 # import routing.routing
@@ -934,22 +935,22 @@ def load_activities(events_file_path, chunksize=100000):
     return df
 
 
-def analyze_fake_walkers(s3url, iteration, min_length=0, title=""):
+def analyze_fake_walkers(s3url, iteration, threshold=2000, title=""):
     s3path = get_output_path_from_s3_url(s3url)
     events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
     modechoice = load_modechoices(events_file_path)
 
     fake_walkers = modechoice[(modechoice['mode'] == 'walk') &
-                              (modechoice['time'] >= 21600) &
-                              (modechoice['time'] <= 72000) &
-                              (modechoice['length'] >= min_length) &
+                              (modechoice['length'] >= threshold) &
                               ((modechoice['availableAlternatives'] == 'WALK') | (
                                   modechoice['availableAlternatives'].isnull()))]
 
-    real_walkers = modechoice[(modechoice['mode'] == 'walk') &
-                              (modechoice['availableAlternatives'].notnull()) &
-                              (modechoice['availableAlternatives'] != 'WALK') &
-                              (modechoice['availableAlternatives'].str.contains('WALK'))]
+    real_walkers = modechoice[(modechoice['mode'] == 'walk') & (
+            (modechoice['length'] < threshold) |
+            ((modechoice['availableAlternatives'].notnull()) &
+             (modechoice['availableAlternatives'] != 'WALK') &
+             (modechoice['availableAlternatives'].str.contains('WALK')))
+    )]
 
     fig, axs = plt.subplots(2, 2, figsize=(24, 4 * 2))
     fig.tight_layout()
