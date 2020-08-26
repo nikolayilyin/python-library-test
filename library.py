@@ -947,7 +947,6 @@ def analyze_fake_walkers(s3url, iteration, min_length=0, title=""):
                                   modechoice['availableAlternatives'].isnull()))]
 
     real_walkers = modechoice[(modechoice['mode'] == 'walk') &
-                              (modechoice['length'] >= min_length) &
                               (modechoice['availableAlternatives'].notnull()) &
                               (modechoice['availableAlternatives'] != 'WALK') &
                               (modechoice['availableAlternatives'].str.contains('WALK'))]
@@ -1028,6 +1027,7 @@ nyc_volumes_benchmark_raw = read_traffic_counts(
 nyc_volumes_benchmark = aggregate_per_hour(nyc_volumes_benchmark_raw, nyc_volumes_benchmark_date)
 
 # from Zach
+# index is hour
 nyc_activity_ends_benchmark = [0.010526809, 0.007105842, 0.003006647, 0.000310397, 0.011508960, 0.039378258,
                                0.116178879, 0.300608907, 0.301269741, 0.214196234, 0.220456846, 0.237608230,
                                0.258382041, 0.277933413, 0.281891163, 0.308248524, 0.289517677, 0.333402259,
