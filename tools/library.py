@@ -255,46 +255,6 @@ def plot_traffic_count(date):
     agg_per_hour_df.plot(x='hour', y='count', title='Date is %s' % date)
 
 
-def get_calibration_text_data(s3url):
-    print("order: car | walk | bike | ride_hail | ride_hail_transit | walk_transit | drive_transit | ride_hail_pooled")
-    print("")
-
-    print('ordered realized mode choice:')
-    print('ordered commute realized mode choice:')
-    print(get_realized_modes_as_str(s3url))
-    print(get_realized_modes_as_str(s3url, 'referenceRealizedModeChoice_commute.csv'))
-    print("")
-
-    s3path = get_output_path_from_s3_url(s3url)
-    config = parse_config(s3path + "/fullBeamConfig.conf")
-
-    def get_config_value(conf_value_name):
-        return config.get(conf_value_name, '=default').split('=')[-1]
-
-    intercepts = ["car_intercept", "walk_intercept", "bike_intercept", "ride_hail_intercept",
-                  "ride_hail_transit_intercept",
-                  "walk_transit_intercept", "drive_transit_intercept", "ride_hail_pooled_intercept", "transfer"]
-    print('order of intercepts:', "\n\t\t ".join(intercepts))
-    print(', '.join(get_config_value(x) for x in intercepts))
-    print("")
-
-    config_ordered = ["agentSampleSizeAsFractionOfPopulation", "flowCapacityFactor", "speedScalingFactor",
-                      "quick_fix_minCarSpeedInMetersPerSecond", "minimumRoadSpeedInMetersPerSecond",
-                      "fractionOfInitialVehicleFleet", "transitCapacity", "fractionOfPeopleWithBicycle",
-                      "parkingStallCountScalingFactor", "transitPrice"]
-    print('order of config values:', "\n\t\t ".join(config_ordered))
-    print(', '.join(get_config_value(x) for x in config_ordered))
-    print("")
-
-    print('the rest of configuration:')
-    for key, value in config.items():
-        if 'intercept' not in key and key not in config_ordered:
-            print(value)
-
-    print("")
-    grep_beamlog(s3path + "/beamLog.out", ["Total number of links", "Number of persons:"])
-
-
 def get_calibration_png_graphs(s3url, first_iteration=0, last_iteration=0, png_title=None):
     s3path = get_output_path_from_s3_url(s3url)
 
@@ -743,68 +703,6 @@ def get_average_car_speed(s3url, iteration):
     return average_speed[average_speed['iteration'] == iteration]['speed'].median()
 
 
-def parse_config(config_url, complain=True):
-    config = urllib.request.urlopen(config_url)
-
-    config_keys = ["flowCapacityFactor", "speedScalingFactor", "quick_fix_minCarSpeedInMetersPerSecond",
-                   "activitySimEnabled", "transitCapacity",
-                   "minimumRoadSpeedInMetersPerSecond", "fractionOfInitialVehicleFleet",
-                   "agentSampleSizeAsFractionOfPopulation",
-                   "simulationName", "directory", "generate_secondary_activities", "lastIteration",
-                   "fractionOfPeopleWithBicycle",
-                   "parkingStallCountScalingFactor", "parkingPriceMultiplier", "parkingCostScalingFactor", "queryDate",
-                   "transitPrice", "transit_crowding", "transit_crowding_percentile",
-                   "maxLinkLengthToApplySpeedScalingFactor",
-                   "transit_crowding_VOT_multiplier", "transit_crowding_VOT_cutoff",
-                   "activity_file_path", "intercept_file_path", "additional_trip_utility"]
-    intercept_keys = ["bike_intercept", "car_intercept", "drive_transit_intercept", "ride_hail_intercept",
-                      "ride_hail_pooled_intercept", "ride_hail_transit_intercept", "walk_intercept",
-                      "walk_transit_intercept", "transfer"]
-
-    config_map = {}
-    default_value = ""
-
-    for conf_key in config_keys:
-        config_map[conf_key] = default_value
-
-    def set_value(key, line_value):
-        value = line_value.strip().replace("\"", "")
-
-        if key not in config_map:
-            config_map[key] = value
-        else:
-            old_val = config_map[key]
-            if old_val == default_value or old_val.strip() == value.strip():
-                config_map[key] = value
-            else:
-                if complain:
-                    print("an attempt to rewrite config value with key:", key)
-                    print("   value in the map  \t", old_val)
-                    print("   new rejected value\t", value)
-
-    physsim_names = ['JDEQSim', 'BPRSim', 'PARBPRSim', 'CCHRoutingAssignment']
-
-    def look_for_physsim_type(config_line):
-        for physsim_name in physsim_names:
-            if 'name={}'.format(physsim_name) in config_line:
-                set_value("physsim_type", "physsim_type = {}".format(physsim_name))
-
-    for b_line in config.readlines():
-        line = b_line.decode("utf-8").strip()
-
-        look_for_physsim_type(line)
-
-        for ckey in config_keys:
-            if ckey + "=" in line or ckey + "\"=" in line:
-                set_value(ckey, line)
-
-        for ikey in intercept_keys:
-            if ikey in line:
-                set_value(ikey, line)
-
-    return config_map
-
-
 def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s3url_base_run,
                                                 compare_with_benchmark=True, figsize=(20, 5), rot=15):
     columns = ['date', 'subway', 'bus', 'car', 'transit']
@@ -1010,6 +908,116 @@ def plot_volumes_comparison_on_axs(s3url, iteration, suptitle="", population_siz
                                       population_size=population_size, activity_ends=activity_ends)
 
 
+def parse_config(config_url, complain=True):
+    config = urllib.request.urlopen(config_url)
+
+    config_keys = ["flowCapacityFactor", "speedScalingFactor", "quick_fix_minCarSpeedInMetersPerSecond",
+                   "activitySimEnabled", "transitCapacity",
+                   "minimumRoadSpeedInMetersPerSecond", "fractionOfInitialVehicleFleet",
+                   "agentSampleSizeAsFractionOfPopulation",
+                   "simulationName", "directory", "generate_secondary_activities", "lastIteration",
+                   "fractionOfPeopleWithBicycle",
+                   "parkingStallCountScalingFactor", "parkingPriceMultiplier", "parkingCostScalingFactor", "queryDate",
+                   "transitPrice", "transit_crowding", "transit_crowding_percentile",
+                   "maxLinkLengthToApplySpeedScalingFactor", "max_destination_distance_meters",
+                   "max_destination_choice_set_size",
+                   "transit_crowding_VOT_multiplier", "transit_crowding_VOT_threshold",
+                   "activity_file_path", "intercept_file_path", "additional_trip_utility"]
+    intercept_keys = ["bike_intercept", "car_intercept", "drive_transit_intercept", "ride_hail_intercept",
+                      "ride_hail_pooled_intercept", "ride_hail_transit_intercept", "walk_intercept",
+                      "walk_transit_intercept", "transfer"]
+
+    config_map = {}
+    default_value = ""
+
+    for conf_key in config_keys:
+        config_map[conf_key] = default_value
+
+    def set_value(key, line_value):
+        value = line_value.strip().replace("\"", "")
+
+        if key not in config_map:
+            config_map[key] = value
+        else:
+            old_val = config_map[key]
+            if old_val == default_value or old_val.strip() == value.strip():
+                config_map[key] = value
+            else:
+                if complain:
+                    print("an attempt to rewrite config value with key:", key)
+                    print("   value in the map  \t", old_val)
+                    print("   new rejected value\t", value)
+
+    physsim_names = ['JDEQSim', 'BPRSim', 'PARBPRSim', 'CCHRoutingAssignment']
+
+    def look_for_physsim_type(config_line):
+        for physsim_name in physsim_names:
+            if 'name={}'.format(physsim_name) in config_line:
+                set_value("physsim_type", "physsim_type = {}".format(physsim_name))
+
+    for b_line in config.readlines():
+        line = b_line.decode("utf-8").strip()
+
+        look_for_physsim_type(line)
+
+        for ckey in config_keys:
+            if ckey + "=" in line or ckey + "\"=" in line:
+                set_value(ckey, line)
+
+        for ikey in intercept_keys:
+            if ikey in line:
+                set_value(ikey, line)
+
+    return config_map
+
+
+def get_calibration_text_data(s3url, commit=""):
+    print("order: car | walk | bike | ride_hail | ride_hail_transit | walk_transit | drive_transit | ride_hail_pooled")
+    print("")
+
+    print('ordered realized mode choice:')
+    print('ordered commute realized mode choice:')
+    modes_section = get_realized_modes_as_str(s3url)
+    print(modes_section)
+    print(get_realized_modes_as_str(s3url, 'referenceRealizedModeChoice_commute.csv'))
+    print("")
+
+    s3path = get_output_path_from_s3_url(s3url)
+    config = parse_config(s3path + "/fullBeamConfig.conf")
+
+    def get_config_value(conf_value_name):
+        return config.get(conf_value_name, '=default').split('=')[-1]
+
+    intercepts = ["car_intercept", "walk_intercept", "bike_intercept", "ride_hail_intercept",
+                  "ride_hail_transit_intercept",
+                  "walk_transit_intercept", "drive_transit_intercept", "ride_hail_pooled_intercept", "transfer"]
+    print('order of intercepts:', "\n\t\t ".join(intercepts))
+    intercepts_sections = ', '.join(get_config_value(x) for x in intercepts)
+    print(intercepts_sections)
+    print("")
+
+    config_ordered = ["lastIteration", "agentSampleSizeAsFractionOfPopulation", "flowCapacityFactor",
+                      "speedScalingFactor",
+                      "quick_fix_minCarSpeedInMetersPerSecond", "minimumRoadSpeedInMetersPerSecond",
+                      "fractionOfInitialVehicleFleet", "transitCapacity", "fractionOfPeopleWithBicycle",
+                      "parkingStallCountScalingFactor", "transitPrice", "transit_crowding_VOT_multiplier",
+                      "transit_crowding_VOT_threshold"]
+    print('order of config values:', "\n\t\t ".join(config_ordered))
+    config_section = ','.join(get_config_value(x) for x in config_ordered)
+    print(config_section)
+    print("")
+
+    print('the rest of configuration:')
+    for key, value in config.items():
+        if 'intercept' not in key and key not in config_ordered:
+            print(value)
+
+    print("")
+    grep_beamlog(s3path + "/beamLog.out", ["Total number of links", "Number of persons:"])
+
+    return "{}, ,{},{}, ,{}, ,{}".format(config_section, commit, s3url, modes_section, intercepts_sections)
+
+
 def analyze_fake_walkers(s3url, iteration, threshold=2000, title="", modechoice=None):
     s3path = get_output_path_from_s3_url(s3url)
     events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
@@ -1018,7 +1026,7 @@ def analyze_fake_walkers(s3url, iteration, threshold=2000, title="", modechoice=
         modechoice = load_modechoices(events_file_path)
 
     is_fake = (modechoice['length'] >= threshold) & (
-                (modechoice['availableAlternatives'] == 'WALK') | (modechoice['availableAlternatives'].isnull()))
+            (modechoice['availableAlternatives'] == 'WALK') | (modechoice['availableAlternatives'].isnull()))
 
     fake_walkers = modechoice[(modechoice['mode'] == 'walk') & is_fake]
     real_walkers = modechoice[(modechoice['mode'] == 'walk') & (~is_fake)]
@@ -1075,7 +1083,9 @@ def analyze_fake_walkers(s3url, iteration, threshold=2000, title="", modechoice=
     print('number of FAKE walkers, FAKE walkers of all modechoice events :')
     print(number_of_fake_walkers, number_of_fake_walkers / number_of_all_modechoice)
 
-    return modechoice
+    return "{},{},{},{},{}".format(number_of_real_walkers, number_of_real_walkers / number_of_all_modechoice,
+                                   number_of_fake_walkers, number_of_fake_walkers / number_of_all_modechoice,
+                                   number_of_all_modechoice)
 
 
 nyc_volumes_benchmark_date = '2018-04-11'
