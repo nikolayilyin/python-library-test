@@ -153,13 +153,13 @@ def plot_simulation_vs_google_speed_comparison(s3url, iteration, compare_vs_3am,
     to_plot_df_speed_0['departure_hour_'] = to_plot_df_speed_0.index
 
     if compare_vs_3am:
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_min', label='g min', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_mean', label='g mean', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_max', label='g max', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_min', label='g 3am min', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_mean', label='g 3am mean', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_max', label='g 3am max', ax=ax1)
     else:
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_min', label='g 3am min', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_mean', label='g 3am mean', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_max', label='g 3am max', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_min', label='g min', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_mean', label='g mean', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_max', label='g max', ax=ax1)
 
     to_plot_df_speed_0.plot(x='departure_hour_', y='sim_speed', ax=ax1)
 
