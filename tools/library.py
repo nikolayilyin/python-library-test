@@ -1015,7 +1015,7 @@ def get_calibration_text_data(s3url, commit=""):
     print("")
     grep_beamlog(s3path + "/beamLog.out", ["Total number of links", "Number of persons:"])
 
-    return "{}, ,{},{}, ,{}, ,{}".format(config_section, commit, s3url, modes_section, intercepts_sections)
+    return "{}, ,{},{}, , ,{}, ,{}".format(config_section, commit, s3url, modes_section, intercepts_sections)
 
 
 def analyze_fake_walkers(s3url, iteration, threshold=2000, title="", modechoice=None):
