@@ -704,7 +704,7 @@ def get_average_car_speed(s3url, iteration):
 
 
 def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s3url_base_run,
-                                                compare_with_benchmark=True, figsize=(20, 5), rot=15, title=""):
+                                                compare_with_benchmark=True, figsize=(20, 5), rot=15, suptitle=""):
     columns = ['date', 'subway', 'bus', 'car', 'transit']
     benchmark_mta_info = [['07/01/2020', -79.60, -49, -16.20, -71.0],
                           ['06/03/2020', -87.60, -66, -37.40, -81.5],
@@ -769,7 +769,7 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
 
     result = pd.DataFrame(graph_data, columns=columns)
     ax = result.groupby('date').sum().plot(kind='bar', figsize=figsize, rot=rot)
-    ax.set_title('Comparison of difference vs baseline and real data from MTI.info {}'.format(title))
+    ax.set_title('Comparison of difference vs baseline and real data from MTI.info {}'.format(suptitle))
     ax.legend(loc='upper left', fancybox=True, framealpha=0.9)
 
     ax.grid('on', which='major', axis='y')
