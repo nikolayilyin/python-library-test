@@ -704,7 +704,7 @@ def get_average_car_speed(s3url, iteration):
 
 
 def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s3url_base_run,
-                                                compare_with_benchmark=True, figsize=(20, 5), rot=15):
+                                                compare_with_benchmark=True, figsize=(20, 5), rot=15, title=""):
     columns = ['date', 'subway', 'bus', 'car', 'transit']
     benchmark_mta_info = [['07/01/2020', -79.60, -49, -16.20, -71.0],
                           ['06/03/2020', -87.60, -66, -37.40, -81.5],
@@ -769,7 +769,7 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
 
     result = pd.DataFrame(graph_data, columns=columns)
     ax = result.groupby('date').sum().plot(kind='bar', figsize=figsize, rot=rot)
-    ax.set_title('Comparison of difference vs baseline and real data from MTI.info')
+    ax.set_title('Comparison of difference vs baseline and real data from MTI.info {}'.format(title))
     ax.legend(loc='upper left', fancybox=True, framealpha=0.9)
 
     ax.grid('on', which='major', axis='y')
@@ -1001,7 +1001,7 @@ def get_calibration_text_data(s3url, commit=""):
                       "quick_fix_minCarSpeedInMetersPerSecond", "minimumRoadSpeedInMetersPerSecond",
                       "fractionOfInitialVehicleFleet", "transitCapacity", "fractionOfPeopleWithBicycle",
                       "parkingStallCountScalingFactor", "transitPrice", "transit_crowding_VOT_multiplier",
-                      "transit_crowding_VOT_threshold"]
+                      "transit_crowding_VOT_threshold", "additional_trip_utility"]
     print('order of config values:', "\n\t\t ".join(config_ordered))
     config_section = ','.join(get_config_value(x) for x in config_ordered)
     print(config_section)
