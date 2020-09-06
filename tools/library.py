@@ -1201,6 +1201,41 @@ def plot_calibration_parameters(title_to_s3url,
     ax.grid('on', which='major', axis='y')
 
 
+def calculate_mean_time_at_home(s3url, iteration, ax, total_persons, title=""):
+    s3path = get_output_path_from_s3_url(s3url)
+    events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
+
+    home_acts = pd.concat([events[events['actType'] == 'Home']
+                           for events in pd.read_csv(events_file_path, low_memory=False, chunksize=10000)])
+
+    def get_home_activity_time(row):
+        if row['type'] == 'actend':
+            return min(row['time'] / 3600, 24.0)
+        if row['type'] == 'actstart':
+            return max(row['time'] / -3600, -23.9)
+        return 0
+
+    home_acts['homeActTime'] = home_acts.apply(get_home_activity_time, axis=1)
+    home_activities = ((home_acts.groupby('person')['homeActTime']).sum() + 24).reset_index()
+
+    home_activities['homeActTime'].hist(bins=24, ax=ax)
+    ax.set_title('Time at home per person. Simulated.\n{}'.format(title))
+
+    affected_persons = len(home_acts['person'].unique())
+
+    # number_of_missing_persons = total_persons - affected_persons
+    # sitting_at_home_data = [[0, 24.0]] * number_of_missing_persons
+    # sitting_at_home = pd.DataFrame(sitting_at_home_data, columns=['person', 'homeActTime'])
+    # home_activities_total = home_activities.append(sitting_at_home, sort=False)
+
+    # home_activities_total['homeActTime'].hist(bins=24, ax=ax2, log=True)
+    # ax2.set_title('Total time at home per person. Logarithmic scale. ' + title)
+
+    mean_time_at_home = (home_activities['homeActTime'].sum() + (total_persons - affected_persons) * 24) / total_persons
+
+    return mean_time_at_home
+
+
 nyc_volumes_benchmark_date = '2018-04-11'
 nyc_volumes_benchmark_raw = read_traffic_counts(
     pd.read_csv('https://data.cityofnewyork.us/api/views/ertz-hr4r/rows.csv?accessType=DOWNLOAD'))
