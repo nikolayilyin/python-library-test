@@ -1025,6 +1025,17 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
                           ['05/06/2020', -90.70, -75, -52.30, -86.3],
                           ['04/01/2020', -90.60, -77, -63.20, -86.8]]
 
+    def column_name_to_passenger_multiplier(column_name):
+        if column_name == '0':
+            return 1
+
+        delimeter = '-'
+        if delimeter in column_name:
+            nums = column_name.split(delimeter)
+            return (int(nums[0]) + int(nums[1])) // 2
+        else:
+            return int(column_name)
+
     def get_sum_of_passenger_per_trip(df, ignore_hour_0=True):
         sum_df = df.sum()
         total_sum = 0
@@ -1034,7 +1045,8 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
                 continue
             if ignore_hour_0 and column == '0':
                 continue
-            total_sum = total_sum + sum_df[column]
+            multiplier = column_name_to_passenger_multiplier(column)
+            total_sum = total_sum + sum_df[column] * multiplier
 
         return total_sum
 
@@ -1050,7 +1062,7 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
 
         car_trips = read_csv('passengerPerTripCar')
         bus_trips = read_csv('passengerPerTripBus')
-        sub_trips = read_csv('passengerPerTripRail')
+        sub_trips = read_csv('passengerPerTripSubway')
 
         car_trips_sum = get_sum_of_passenger_per_trip(car_trips, ignore_hour_0=False)
         bus_trips_sum = get_sum_of_passenger_per_trip(bus_trips, ignore_hour_0=True)
