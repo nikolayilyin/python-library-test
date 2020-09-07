@@ -1019,11 +1019,14 @@ def get_calibration_text_data(s3url, commit=""):
 
 def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s3url_base_run,
                                                 compare_with_benchmark=True, figsize=(20, 5), rot=15, suptitle=""):
-    columns = ['date', 'subway', 'bus', 'car', 'transit']
-    benchmark_mta_info = [['07/01/2020', -79.60, -49, -16.20, -71.0],
-                          ['06/03/2020', -87.60, -66, -37.40, -81.5],
-                          ['05/06/2020', -90.70, -75, -52.30, -86.3],
-                          ['04/01/2020', -90.60, -77, -63.20, -86.8]]
+    columns = ['date', 'subway', 'bus', 'rail', 'car', 'transit']
+
+    benchmark_mta_info = [['09 02 2020', -72.90, -54.00, -78.86, -12.90, -68.42],
+                          ['08 05 2020', -75.50, -40.00, -83.32, -08.90, -66.68],
+                          ['07 01 2020', -79.60, -49.00, -83.91, -16.20, -71.90],
+                          ['06 03 2020', -87.60, -66.00, -90.95, -37.40, -82.17],
+                          ['05 06 2020', -90.70, -75.00, -95.00, -52.30, -86.89],
+                          ['04 01 2020', -90.60, -77.00, -96.13, -63.20, -87.47]]
 
     def column_name_to_passenger_multiplier(column_name):
         if column_name == '0':
@@ -1060,17 +1063,19 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
             except HTTPError:
                 print('was not able to download', file_url)
 
-        car_trips = read_csv('passengerPerTripCar')
-        bus_trips = read_csv('passengerPerTripBus')
         sub_trips = read_csv('passengerPerTripSubway')
+        bus_trips = read_csv('passengerPerTripBus')
+        car_trips = read_csv('passengerPerTripCar')
+        rail_trips = read_csv('passengerPerTripRail')
 
-        car_trips_sum = get_sum_of_passenger_per_trip(car_trips, ignore_hour_0=False)
-        bus_trips_sum = get_sum_of_passenger_per_trip(bus_trips, ignore_hour_0=True)
         sub_trips_sum = get_sum_of_passenger_per_trip(sub_trips, ignore_hour_0=True)
+        bus_trips_sum = get_sum_of_passenger_per_trip(bus_trips, ignore_hour_0=True)
+        car_trips_sum = get_sum_of_passenger_per_trip(car_trips, ignore_hour_0=False)
+        rail_trips_sum = get_sum_of_passenger_per_trip(rail_trips, ignore_hour_0=True)
 
-        return car_trips_sum, bus_trips_sum, sub_trips_sum
+        return car_trips_sum, bus_trips_sum, sub_trips_sum, rail_trips_sum
 
-    (base_car, base_bus, base_sub) = get_car_bus_subway_trips(s3url_base_run)
+    (base_car, base_bus, base_sub, base_rail) = get_car_bus_subway_trips(s3url_base_run)
 
     if compare_with_benchmark:
         graph_data = benchmark_mta_info.copy()
@@ -1078,17 +1083,18 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
         graph_data = []
 
     def add_comparison(s3url_run, run_title):
-        (minus_car, minus_bus, minus_sub) = get_car_bus_subway_trips(s3url_run)
+        (minus_car, minus_bus, minus_sub, minus_rail) = get_car_bus_subway_trips(s3url_run)
 
         def calc_diff(base_run_val, minus_run_val):
             return (minus_run_val - base_run_val) / base_run_val * 100
 
-        diff_transit = calc_diff(base_sub + base_bus, minus_sub + minus_bus)
+        diff_transit = calc_diff(base_sub + base_bus + base_rail, minus_sub + minus_bus + minus_rail)
         diff_sub = calc_diff(base_sub, minus_sub)
         diff_bus = calc_diff(base_bus, minus_bus)
         diff_car = calc_diff(base_car, minus_car)
+        diff_rail = calc_diff(base_rail, minus_rail)
 
-        graph_data.append(['{0}'.format(run_title), diff_sub, diff_bus, diff_car, diff_transit])
+        graph_data.append(['{0}'.format(run_title), diff_sub, diff_bus, diff_rail, diff_car, diff_transit])
 
     for (title, s3url) in run_title_to_s3url:
         add_comparison(s3url, title)
@@ -1096,7 +1102,7 @@ def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s
     result = pd.DataFrame(graph_data, columns=columns)
     ax = result.groupby('date').sum().plot(kind='bar', figsize=figsize, rot=rot)
     ax.set_title('Comparison of difference vs baseline and real data from MTI.info {}'.format(suptitle))
-    ax.legend(loc='upper left', fancybox=True, framealpha=0.9)
+    ax.legend(loc='center left', bbox_to_anchor=(1, 1))
 
     ax.grid('on', which='major', axis='y')
 
@@ -1111,8 +1117,12 @@ def plot_modechoice_comparison(title_to_s3url, benchmark_url):
         df = pd.read_csv(path)
         tail = df.tail(1).copy()
 
+        exist_columns = set(tail.columns)
         for m in modes:
-            tail[m] = tail[m].astype(float)
+            if m not in exist_columns:
+                tail[m] = 0.0
+            else:
+                tail[m] = tail[m].astype(float)
 
         return tail[modes]
 
