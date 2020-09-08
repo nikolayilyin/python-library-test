@@ -8,13 +8,13 @@ class RideHailReference:
         self.ref_df = RideHailReference.taxi_usage_json_to_dataframes(path_to_reference)
 
     def ref_get_trips_per_day(self):
-        return self.ref_get_data_frame('trips_per_day', ['fhv_high_volume'])
+        return self.ref_get_data_frame('trips_per_day', ['fhv_high_volume']).rename(columns={"fhv_high_volume": "Ridehailing apps"})
 
     def ref_get_vehicles_per_day(self):
-        return self.ref_get_data_frame('vehicles_per_day', ['fhv_high_volume'])
+        return self.ref_get_data_frame('vehicles_per_day', ['fhv_high_volume']).rename(columns={"fhv_high_volume": "Ridehailing apps"})
 
     def ref_get_trips_per_day_shared(self):
-        return self.ref_get_data_frame('trips_per_day_shared', ['fhv_high_volume'])
+        return self.ref_get_data_frame('trips_per_day_shared', ['fhv_high_volume']).rename(columns={"fhv_high_volume": "Ridehailing apps"})
 
     @staticmethod
     def taxi_usage_json_to_dataframes(json_path):
@@ -31,6 +31,7 @@ class RideHailReference:
             service_df = df[[service]].T.reset_index().apply(pd.Series.explode)
             service_df.sort_values(by=['month'], inplace=True)
             service_df['date'] = service_df['month'].transform(lambda x: pd.to_datetime(x, unit='ms'))
+            service_df['year_month'] = service_df['date'].dt.to_period('M')
             service_df.set_index('date', inplace=True)
             result[service] = service_df
         return result
@@ -42,7 +43,7 @@ class RideHailReference:
         for service in taxi_services:
             df = self.ref_df[service]
             reseted_index = df.reset_index()
-            result_df[service] = df[column_name]
+            result_df[service] = df[[column_name, 'year_month']]
         return pd.concat(result_df, join='outer', axis=1)
 
 
