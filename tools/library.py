@@ -1017,163 +1017,6 @@ def get_calibration_text_data(s3url, commit=""):
     return "{}, ,{},{}, , ,{}, ,{}".format(config_section, commit, s3url, modes_section, intercepts_sections)
 
 
-def compare_riderships_vs_baserun_and_benchmark(run_title_to_s3url, iteration, s3url_base_run,
-                                                compare_with_benchmark=True, figsize=(20, 5), rot=15, suptitle=""):
-    columns = ['date', 'subway', 'bus', 'rail', 'car', 'transit']
-
-    benchmark_mta_info = [['09 02 2020', -72.90, -54.00, -78.86, -12.90, -68.42],
-                          ['08 05 2020', -75.50, -40.00, -83.32, -08.90, -66.68],
-                          ['07 01 2020', -79.60, -49.00, -83.91, -16.20, -71.90],
-                          ['06 03 2020', -87.60, -66.00, -90.95, -37.40, -82.17],
-                          ['05 06 2020', -90.70, -75.00, -95.00, -52.30, -86.89],
-                          ['04 01 2020', -90.60, -77.00, -96.13, -63.20, -87.47]]
-
-    def column_name_to_passenger_multiplier(column_name):
-        if column_name == '0':
-            return 1
-
-        delimeter = '-'
-        if delimeter in column_name:
-            nums = column_name.split(delimeter)
-            return (int(nums[0]) + int(nums[1])) // 2
-        else:
-            return int(column_name)
-
-    def get_sum_of_passenger_per_trip(df, ignore_hour_0=True):
-        sum_df = df.sum()
-        total_sum = 0
-
-        for column in df.columns:
-            if column == 'hours':
-                continue
-            if ignore_hour_0 and column == '0':
-                continue
-            multiplier = column_name_to_passenger_multiplier(column)
-            total_sum = total_sum + sum_df[column] * multiplier
-
-        return total_sum
-
-    def get_car_bus_subway_trips(beam_s3url):
-        s3path = get_output_path_from_s3_url(beam_s3url)
-
-        def read_csv(filename):
-            file_url = s3path + "/ITERS/it.{0}/{0}.{1}.csv".format(iteration, filename)
-            try:
-                return pd.read_csv(file_url)
-            except HTTPError:
-                print('was not able to download', file_url)
-
-        sub_trips = read_csv('passengerPerTripSubway')
-        bus_trips = read_csv('passengerPerTripBus')
-        car_trips = read_csv('passengerPerTripCar')
-        rail_trips = read_csv('passengerPerTripRail')
-
-        sub_trips_sum = get_sum_of_passenger_per_trip(sub_trips, ignore_hour_0=True)
-        bus_trips_sum = get_sum_of_passenger_per_trip(bus_trips, ignore_hour_0=True)
-        car_trips_sum = get_sum_of_passenger_per_trip(car_trips, ignore_hour_0=False)
-        rail_trips_sum = get_sum_of_passenger_per_trip(rail_trips, ignore_hour_0=True)
-
-        return car_trips_sum, bus_trips_sum, sub_trips_sum, rail_trips_sum
-
-    (base_car, base_bus, base_sub, base_rail) = get_car_bus_subway_trips(s3url_base_run)
-
-    if compare_with_benchmark:
-        graph_data = benchmark_mta_info.copy()
-    else:
-        graph_data = []
-
-    def add_comparison(s3url_run, run_title):
-        (minus_car, minus_bus, minus_sub, minus_rail) = get_car_bus_subway_trips(s3url_run)
-
-        def calc_diff(base_run_val, minus_run_val):
-            return (minus_run_val - base_run_val) / base_run_val * 100
-
-        diff_transit = calc_diff(base_sub + base_bus + base_rail, minus_sub + minus_bus + minus_rail)
-        diff_sub = calc_diff(base_sub, minus_sub)
-        diff_bus = calc_diff(base_bus, minus_bus)
-        diff_car = calc_diff(base_car, minus_car)
-        diff_rail = calc_diff(base_rail, minus_rail)
-
-        graph_data.append(['{0}'.format(run_title), diff_sub, diff_bus, diff_rail, diff_car, diff_transit])
-
-    for (title, s3url) in run_title_to_s3url:
-        add_comparison(s3url, title)
-
-    result = pd.DataFrame(graph_data, columns=columns)
-    ax = result.groupby('date').sum().plot(kind='bar', figsize=figsize, rot=rot)
-    ax.set_title('Comparison of difference vs baseline and real data from MTI.info {}'.format(suptitle))
-    ax.legend(loc='center left', bbox_to_anchor=(1, 1))
-
-    ax.grid('on', which='major', axis='y')
-
-
-def plot_modechoice_comparison(title_to_s3url, benchmark_url):
-    modes = ['bike', 'car', 'drive_transit', 'ride_hail',
-             'ride_hail_pooled', 'ride_hail_transit', 'walk', 'walk_transit']
-
-    # def get_realized_modes(s3url, data_file_name='referenceRealizedModeChoice.csv'):
-    def get_realized_modes(s3url, data_file_name='realizedModeChoice.csv'):
-        path = get_output_path_from_s3_url(s3url) + "/" + data_file_name
-        df = pd.read_csv(path)
-        tail = df.tail(1).copy()
-
-        exist_columns = set(tail.columns)
-        for m in modes:
-            if m not in exist_columns:
-                tail[m] = 0.0
-            else:
-                tail[m] = tail[m].astype(float)
-
-        return tail[modes]
-
-    benchmark = get_realized_modes(benchmark_url).reset_index(drop=True)
-
-    benchmark_absolute = benchmark.copy()
-    benchmark_absolute['name'] = 'benchmark'
-
-    zeros = benchmark_absolute.copy()
-    for mode in modes:
-        zeros[mode] = 0.0
-
-    modechoices_absolute = [benchmark_absolute]
-    modechoices_difference = [zeros]
-    modechoices_diff_in_percentage = [zeros]
-
-    for (name, url) in title_to_s3url:
-        modechoice = get_realized_modes(url).reset_index(drop=True)
-
-        modechoice_absolute = modechoice.copy()
-        modechoice_absolute['name'] = name
-        modechoices_absolute.append(modechoice_absolute)
-
-        modechoice = modechoice.sub(benchmark, fill_value=0)
-        modechoice_perc = modechoice / benchmark * 100
-
-        modechoice['name'] = name
-        modechoices_difference.append(modechoice)
-
-        modechoice_perc['name'] = name
-        modechoices_diff_in_percentage.append(modechoice_perc)
-
-    df_absolute = pd.concat(modechoices_absolute)
-    df_diff = pd.concat(modechoices_difference)
-    df_diff_perc = pd.concat(modechoices_diff_in_percentage)
-
-    _, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex='all', figsize=(20, 5 * 3))
-
-    def plot(df, ax, title):
-        df.set_index('name').plot(kind='bar', ax=ax, rot=65)
-        ax.axhline(0, color='black', linewidth=0.4)
-        ax.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
-        ax.set_title(title)
-
-    plot(df_absolute, ax0, "absolute values of modechoice")
-    plot(df_diff, ax1, "difference between run and benchmark in absolute numbers")
-    plot(df_diff_perc, ax2, "difference between run and benchmark in percentage")
-
-    plt.suptitle("BEAM run vs benchmark. realizedModeChoice.csv")
-
-
 def plot_calibration_parameters(title_to_s3url,
                                 suptitle="", figsize=(23, 6), rot=70,
                                 calibration_parameters=None):
@@ -1244,6 +1087,184 @@ def calculate_mean_time_at_home(s3url, iteration, ax, total_persons, title=""):
     mean_time_at_home = (home_activities['homeActTime'].sum() + (total_persons - affected_persons) * 24) / total_persons
 
     return mean_time_at_home
+
+
+def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url_base_run, date_to_calc_diff=None,
+                                                figsize=(20, 5), rot=15, suptitle=""):
+    columns = ['date', 'subway', 'bus', 'rail', 'car', 'transit']
+
+    benchmark_mta_info = [['09 2020', -72.90, -54.00, -78.86, -12.90, -68.42],
+                          ['08 2020', -75.50, -40.00, -83.32, -08.90, -66.68],
+                          ['07 2020', -79.60, -49.00, -83.91, -16.20, -71.90],
+                          ['06 2020', -87.60, -66.00, -90.95, -37.40, -82.17],
+                          ['05 2020', -90.70, -75.00, -95.00, -52.30, -86.89],
+                          ['04 2020', -90.60, -77.00, -96.13, -63.20, -87.47]]
+
+    date_to_benchmark = {}
+    for row in benchmark_mta_info:
+        date_to_benchmark[row[0]] = row[1:]
+
+    print('reference dates:', date_to_benchmark.keys())
+
+    def column_name_to_passenger_multiplier(column_name):
+        if column_name == '0':
+            return 1
+
+        delimeter = '-'
+        if delimeter in column_name:
+            nums = column_name.split(delimeter)
+            return (int(nums[0]) + int(nums[1])) // 2
+        else:
+            return int(column_name)
+
+    def get_sum_of_passenger_per_trip(df, ignore_hour_0=True):
+        sum_df = df.sum()
+        total_sum = 0
+
+        for column in df.columns:
+            if column == 'hours':
+                continue
+            if ignore_hour_0 and column == '0':
+                continue
+            multiplier = column_name_to_passenger_multiplier(column)
+            total_sum = total_sum + sum_df[column] * multiplier
+
+        return total_sum
+
+    def get_car_bus_subway_trips(beam_s3url):
+        s3path = get_output_path_from_s3_url(beam_s3url)
+
+        def read_csv(filename):
+            file_url = s3path + "/ITERS/it.{0}/{0}.{1}.csv".format(iteration, filename)
+            try:
+                return pd.read_csv(file_url)
+            except HTTPError:
+                print('was not able to download', file_url)
+
+        sub_trips = read_csv('passengerPerTripSubway')
+        bus_trips = read_csv('passengerPerTripBus')
+        car_trips = read_csv('passengerPerTripCar')
+        rail_trips = read_csv('passengerPerTripRail')
+
+        sub_trips_sum = get_sum_of_passenger_per_trip(sub_trips, ignore_hour_0=True)
+        bus_trips_sum = get_sum_of_passenger_per_trip(bus_trips, ignore_hour_0=True)
+        car_trips_sum = get_sum_of_passenger_per_trip(car_trips, ignore_hour_0=False)
+        rail_trips_sum = get_sum_of_passenger_per_trip(rail_trips, ignore_hour_0=True)
+
+        return car_trips_sum, bus_trips_sum, sub_trips_sum, rail_trips_sum
+
+    (base_car, base_bus, base_sub, base_rail) = get_car_bus_subway_trips(s3url_base_run)
+
+    graph_data = []
+
+    for (run_title, s3url_run) in title_to_s3url:
+        (minus_car, minus_bus, minus_sub, minus_rail) = get_car_bus_subway_trips(s3url_run)
+
+        def calc_diff(base_run_val, minus_run_val):
+            return (minus_run_val - base_run_val) / base_run_val * 100
+
+        diff_transit = calc_diff(base_sub + base_bus + base_rail, minus_sub + minus_bus + minus_rail)
+        diff_sub = calc_diff(base_sub, minus_sub)
+        diff_bus = calc_diff(base_bus, minus_bus)
+        diff_car = calc_diff(base_car, minus_car)
+        diff_rail = calc_diff(base_rail, minus_rail)
+
+        graph_data.append(['{0}'.format(run_title), diff_sub, diff_bus, diff_rail, diff_car, diff_transit])
+
+    def plot_bars(df, ax, title):
+        df.groupby('date').sum().plot(kind='bar', ax=ax, rot=rot)
+        ax.grid('on', which='major', axis='y')
+        ax.set_title(title)
+        ax.legend(loc='center left', bbox_to_anchor=(1, 0.7))
+
+    if date_to_calc_diff:
+        fig, axs = plt.subplots(1, 3, sharey='all', figsize=figsize)
+    else:
+        fig, axs = plt.subplots(1, 2, sharey='all', figsize=figsize)
+
+    fig.tight_layout(pad=0.1)
+    fig.subplots_adjust(wspace=0.25, hspace=0.1)
+
+    plt.suptitle('Comparison of difference vs baseline and vs real data from MTI.info\n{}'.format(suptitle), y=1.2,
+                 fontsize=17)
+
+    reference_df = pd.DataFrame(benchmark_mta_info, columns=columns)
+    result = pd.DataFrame(graph_data, columns=columns)
+
+    plot_bars(reference_df, axs[0], 'reference from mta.info')
+    plot_bars(result, axs[1], 'BEAM runs')
+
+    if date_to_calc_diff:
+        diff = result[columns[1:]].sub(date_to_benchmark[date_to_calc_diff], axis=1)
+        diff[columns[0]] = result[columns[0]]
+        plot_bars(diff, axs[2], 'result minus reference')
+
+
+def plot_modechoice_comparison(title_to_s3url, benchmark_url):
+    modes = ['bike', 'car', 'drive_transit', 'ride_hail',
+             'ride_hail_pooled', 'ride_hail_transit', 'walk', 'walk_transit']
+
+    # def get_realized_modes(s3url, data_file_name='referenceRealizedModeChoice.csv'):
+    def get_realized_modes(s3url, data_file_name='realizedModeChoice.csv'):
+        path = get_output_path_from_s3_url(s3url) + "/" + data_file_name
+        df = pd.read_csv(path)
+        tail = df.tail(1).copy()
+
+        exist_columns = set(tail.columns)
+        for m in modes:
+            if m not in exist_columns:
+                tail[m] = 0.0
+            else:
+                tail[m] = tail[m].astype(float)
+
+        return tail[modes]
+
+    benchmark = get_realized_modes(benchmark_url).reset_index(drop=True)
+
+    benchmark_absolute = benchmark.copy()
+    benchmark_absolute['name'] = 'benchmark'
+
+    zeros = benchmark_absolute.copy()
+    for mode in modes:
+        zeros[mode] = 0.0
+
+    modechoices_absolute = [benchmark_absolute]
+    modechoices_difference = [zeros]
+    modechoices_diff_in_percentage = [zeros]
+
+    for (name, url) in title_to_s3url:
+        modechoice = get_realized_modes(url).reset_index(drop=True)
+
+        modechoice_absolute = modechoice.copy()
+        modechoice_absolute['name'] = name
+        modechoices_absolute.append(modechoice_absolute)
+
+        modechoice = modechoice.sub(benchmark, fill_value=0)
+        modechoice_perc = modechoice / benchmark * 100
+
+        modechoice['name'] = name
+        modechoices_difference.append(modechoice)
+
+        modechoice_perc['name'] = name
+        modechoices_diff_in_percentage.append(modechoice_perc)
+
+    df_absolute = pd.concat(modechoices_absolute)
+    df_diff = pd.concat(modechoices_difference)
+    df_diff_perc = pd.concat(modechoices_diff_in_percentage)
+
+    _, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex='all', figsize=(20, 5 * 3))
+
+    def plot(df, ax, title):
+        df.set_index('name').plot(kind='bar', ax=ax, rot=65)
+        ax.axhline(0, color='black', linewidth=0.4)
+        ax.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+        ax.set_title(title)
+
+    plot(df_absolute, ax0, "absolute values of modechoice")
+    plot(df_diff, ax1, "difference between run and benchmark in absolute numbers")
+    plot(df_diff_perc, ax2, "difference between run and benchmark in percentage")
+
+    plt.suptitle("BEAM run vs benchmark. realizedModeChoice.csv")
 
 
 nyc_volumes_benchmark_date = '2018-04-11'
