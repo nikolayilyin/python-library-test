@@ -1017,43 +1017,6 @@ def get_calibration_text_data(s3url, commit=""):
     return "{}, ,{},{}, , ,{}, ,{}".format(config_section, commit, s3url, modes_section, intercepts_sections)
 
 
-def plot_calibration_parameters(title_to_s3url,
-                                suptitle="", figsize=(23, 6), rot=70,
-                                calibration_parameters=None):
-    if calibration_parameters is None:
-        calibration_parameters = ['additional_trip_utility', 'walk_transit_intercept']
-
-    calibration_values = []
-
-    for (title, s3url) in title_to_s3url:
-        s3path = get_output_path_from_s3_url(s3url)
-        config = parse_config(s3path + "/fullBeamConfig.conf", complain=False)
-
-        def get_config_value(conf_value_name):
-            return config.get(conf_value_name, '=default').split('=')[-1]
-
-        param_values = [title]
-        for param in calibration_parameters:
-            param_value = get_config_value(param)
-            param_values.append(float(param_value))
-
-        calibration_values.append(param_values)
-
-    calibration_parameters.insert(0, 'name')
-    result = pd.DataFrame(calibration_values, columns=calibration_parameters)
-
-    ax = result.plot(x='name', figsize=figsize, rot=rot)
-
-    for (idx, params) in zip(range(len(calibration_values)), calibration_values):
-        for param in params[1:]:
-            plt.annotate(param, (idx, param))  # , textcoords="offset points", xytext=(0,10), ha='center')
-
-    ax.set_title('calibration parameters {}'.format(suptitle))
-    ax.legend(bbox_to_anchor=(1, 1), loc='upper left')
-
-    ax.grid('on', which='major', axis='y')
-
-
 def calculate_mean_time_at_home(s3url, iteration, ax, total_persons, title=""):
     s3path = get_output_path_from_s3_url(s3url)
     events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
@@ -1310,6 +1273,56 @@ def plot_link_graphs(tmc_data, s3url, iteration, ax=None):
     ax.set_ylabel("speed MPH")
 
     return ax
+
+
+def plot_calibration_parameters(title_to_s3url,
+                                suptitle="", figsize=(23, 6), rot=70,
+                                calibration_parameters=None,
+                                removal_probabilities=None):
+    if calibration_parameters is None:
+        calibration_parameters = ['additional_trip_utility', 'walk_transit_intercept']
+
+    calibration_values = []
+
+    for (title, s3url) in title_to_s3url:
+        s3path = get_output_path_from_s3_url(s3url)
+        config = parse_config(s3path + "/fullBeamConfig.conf", complain=False)
+
+        def get_config_value(conf_value_name):
+            return config.get(conf_value_name, '=default').split('=')[-1]
+
+        param_values = [title]
+        for param in calibration_parameters:
+            param_value = get_config_value(param)
+            param_values.append(float(param_value))
+
+        calibration_values.append(param_values)
+
+    calibration_parameters.insert(0, 'name')
+    result = pd.DataFrame(calibration_values, columns=calibration_parameters)
+
+    linewidth = 4
+    removal_probabilities_color = 'green'
+
+    ax = result.plot(x='name', figsize=figsize, rot=rot, linewidth=linewidth)
+
+    # for (idx, params) in zip(range(len(calibration_values)), calibration_values):
+    #     for param in params[1:]:
+    #         plt.annotate(param, (idx, param))  # , textcoords="offset points", xytext=(0,10), ha='center')
+
+    if removal_probabilities:
+        ax.plot(np.NaN, label='removal probabilities (right scale)',
+                color=removal_probabilities_color, linewidth=linewidth)
+
+    ax.set_title('calibration parameters {}'.format(suptitle))
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+
+    ax.grid('on', which='major', axis='y')
+
+    if removal_probabilities:
+        ax2 = ax.twinx()
+        ax2.plot(range(len(removal_probabilities)), removal_probabilities,
+                 color=removal_probabilities_color, alpha=0.5, linewidth=linewidth)
 
 
 nyc_volumes_benchmark_date = '2018-04-11'
