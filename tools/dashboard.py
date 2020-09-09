@@ -64,7 +64,7 @@ class RideHailReference:
         return self.ref_df[taxi_service].reset_index()[[column_name, 'year_month']]
 
 class RideHailDashboard:
-    def __init__(self, path_to_reference, s3url, iteration):
+    def __init__(self, s3url, iteration):
         # General code to get output path fro S3 URL
         s3path = get_output_path_from_s3_url(s3url)
         self.passenger_per_trip_df = pd.read_csv(
@@ -81,4 +81,19 @@ class RideHailDashboard:
     def get_fleet_size(self):
         return self.fleet_size
 
+    def get_df(self):
+        data = {'fleet_size': [self.get_fleet_size()], 'total_number_of_trips': [self.get_total_number_of_trips()], 'number_of_shared_trips': [self.get_number_of_shared_trips()]}
+        return pd.DataFrame.from_dict(data)
 
+    @staticmethod
+    def get_scenarios_df(s3_baseline, others_dict):
+        baseline = RideHailDashboard(s3_baseline, 10).get_df()
+        baseline['scenario'] = 'baseline'
+        baseline.set_index('scenario', inplace=True)
+        df_list = [baseline]
+        for key, value in others_dict.items():
+            df = RideHailDashboard(value, 10).get_df()
+            df['scenario'] = key
+            df.set_index('scenario', inplace=True)
+            df_list.append(df)
+        return pd.concat(df_list)
