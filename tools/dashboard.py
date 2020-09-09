@@ -16,18 +16,30 @@ class RideHailReference:
 
     def ref_get_trips_per_day(self, year_month=None):
         return RideHailReference.__filter_by_year_month__(
-            self.ref_get_data_frame('trips_per_day', ['fhv_high_volume']).rename(
-                columns={"fhv_high_volume": "Ridehailing apps"}), year_month)
+            self.ref_get_data_frame('trips_per_day', 'fhv_high_volume'), year_month)
 
     def ref_get_vehicles_per_day(self, year_month=None):
         return RideHailReference.__filter_by_year_month__(
-            self.ref_get_data_frame('vehicles_per_day', ['fhv_high_volume']).rename(
-                columns={"fhv_high_volume": "Ridehailing apps"}), year_month)
+            self.ref_get_data_frame('vehicles_per_day', 'fhv_high_volume'), year_month)
 
     def ref_get_trips_per_day_shared(self, year_month=None):
         return RideHailReference.__filter_by_year_month__(
-            self.ref_get_data_frame('trips_per_day_shared', ['fhv_high_volume']).rename(
-                columns={"fhv_high_volume": "Ridehailing apps"}), year_month)
+            self.ref_get_data_frame('trips_per_day_shared', 'fhv_high_volume'), year_month)
+
+    def get_reference(self, from_year_month):
+        temp_df = self.ref_get_trips_per_day()
+        trips_per_day_df = temp_df[(temp_df['year_month'] >= from_year_month)]
+
+        temp_df = self.ref_get_vehicles_per_day()
+        vehicles_per_day_df = temp_df[(temp_df['year_month'] >= from_year_month)]
+
+        temp_df = self.ref_get_trips_per_day_shared()
+        trips_per_day_shared_df = temp_df[(temp_df['year_month'] >= from_year_month)]
+        result_df = pd.merge(trips_per_day_shared_df, pd.merge(trips_per_day_df, vehicles_per_day_df, on='year_month'),
+                          on='year_month')
+        result_df['trips_per_day_shared'].fillna(0, inplace=True)
+        result_df = result_df[['year_month', 'trips_per_day', 'vehicles_per_day', 'trips_per_day_shared']].set_index('year_month')
+        return result_df
 
     @staticmethod
     def taxi_usage_json_to_dataframes(json_path):
@@ -45,20 +57,11 @@ class RideHailReference:
             service_df.sort_values(by=['month'], inplace=True)
             service_df['date'] = service_df['month'].transform(lambda x: pd.to_datetime(x, unit='ms'))
             service_df['year_month'] = service_df['date'].dt.to_period('M')
-            service_df.set_index('date', inplace=True)
             result[service] = service_df
         return result
 
-    def ref_get_data_frame(self, column_name, taxi_services=[]):
-        result_df = {}
-        if taxi_services == []:
-            taxi_services = self.ref_df.keys()
-        for service in taxi_services:
-            df = self.ref_df[service]
-            reseted_index = df.reset_index()
-            result_df[service] = df[[column_name, 'year_month']]
-        return pd.concat(result_df, join='outer', axis=1).reset_index()
-
+    def ref_get_data_frame(self, column_name, taxi_service):
+        return self.ref_df[taxi_service].reset_index()[[column_name, 'year_month']]
 
 class RideHailDashboard:
     def __init__(self, path_to_reference, s3url, iteration):
@@ -77,3 +80,5 @@ class RideHailDashboard:
 
     def get_fleet_size(self):
         return self.fleet_size
+
+
