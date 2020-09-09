@@ -1267,6 +1267,51 @@ def plot_modechoice_comparison(title_to_s3url, benchmark_url):
     plt.suptitle("BEAM run vs benchmark. realizedModeChoice.csv")
 
 
+def load_mapping():
+    return pd.read_csv("https://github.com/LBNL-UCB-STI/beam/files/5146939/beam_transcom_mapping.csv.gz")
+
+
+def load_tmc_dictionary():
+    mapping = load_mapping()
+
+    tmc_path = "https://beam-outputs.s3.amazonaws.com/new_city/newyork/DOT_Traffic_Speeds_20200301.csv.gz"
+    tmc_df = pd.concat([df[df['LINK_ID'].isin(mapping['trafLink'])]
+                        for df in
+                        pd.read_csv(tmc_path, low_memory=False, chunksize=100000, parse_dates=['DATA_AS_OF'])])
+    wed = tmc_df[(tmc_df['DATA_AS_OF'].dt.dayofweek == 2)].copy()
+
+    def group_speed_by_hour(tmc_original):
+        tmc = tmc_original[(tmc_original['SPEED'] > 0) & (tmc_original['SPEED'] < 100)].copy()
+        tmc['hour'] = tmc['DATA_AS_OF'].dt.hour
+        to_plot = tmc[['hour', 'SPEED']].groupby(['hour']).mean()
+        return to_plot
+
+    months = wed['DATA_AS_OF'].dt.month.unique()
+    return {month: group_speed_by_hour(wed[wed['DATA_AS_OF'].dt.month == month]) for month in months}
+
+
+def plot_link_graphs(tmc_data, s3url, iteration, ax=None):
+    mapping = load_mapping()
+
+    s3path = get_output_path_from_s3_url(s3url)
+    linkstats_path = f"{s3path}/ITERS/it.{iteration}/{iteration}.linkstats.csv.gz"
+    ls = pd.concat([df[df['link'].isin(mapping['beamLink'])] for df in pd.read_csv(linkstats_path, chunksize=100000)])
+
+    ms_to_mph = 2.23694
+    ls['speed'] = ms_to_mph * ls['length'] / ls['traveltime']
+
+    ax = tmc_data.plot(y='SPEED', label='transcom', ax=ax)
+
+    beam_plot = ls[['hour', 'speed', 'volume']][ls['volume'] > 0].groupby('hour').apply(
+        lambda x: np.average(x['speed'], weights=x['volume']))
+    beam_plot = beam_plot[beam_plot.index < 24]
+    beam_plot.plot(y='speed', label='beam', ax=ax)
+
+    ax.set_ylabel("speed MPH")
+
+    return ax
+
+
 nyc_volumes_benchmark_date = '2018-04-11'
 nyc_volumes_benchmark_raw = read_traffic_counts(
     pd.read_csv('https://data.cityofnewyork.us/api/views/ertz-hr4r/rows.csv?accessType=DOWNLOAD'))
