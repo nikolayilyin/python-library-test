@@ -7,14 +7,27 @@ class RideHailReference:
     def __init__(self, path_to_reference):
         self.ref_df = RideHailReference.taxi_usage_json_to_dataframes(path_to_reference)
 
-    def ref_get_trips_per_day(self):
-        return self.ref_get_data_frame('trips_per_day', ['fhv_high_volume']).rename(columns={"fhv_high_volume": "Ridehailing apps"})
+    @staticmethod
+    def __filter_by_year_month__(df, year_month):
+        if year_month is not None:
+            return df[df['year_month'] == year_month]
+        else:
+            return df
 
-    def ref_get_vehicles_per_day(self):
-        return self.ref_get_data_frame('vehicles_per_day', ['fhv_high_volume']).rename(columns={"fhv_high_volume": "Ridehailing apps"})
+    def ref_get_trips_per_day(self, year_month=None):
+        return RideHailReference.__filter_by_year_month__(
+            self.ref_get_data_frame('trips_per_day', ['fhv_high_volume']).rename(
+                columns={"fhv_high_volume": "Ridehailing apps"}), year_month)
 
-    def ref_get_trips_per_day_shared(self):
-        return self.ref_get_data_frame('trips_per_day_shared', ['fhv_high_volume']).rename(columns={"fhv_high_volume": "Ridehailing apps"})
+    def ref_get_vehicles_per_day(self, year_month=None):
+        return RideHailReference.__filter_by_year_month__(
+            self.ref_get_data_frame('vehicles_per_day', ['fhv_high_volume']).rename(
+                columns={"fhv_high_volume": "Ridehailing apps"}), year_month)
+
+    def ref_get_trips_per_day_shared(self, year_month=None):
+        return RideHailReference.__filter_by_year_month__(
+            self.ref_get_data_frame('trips_per_day_shared', ['fhv_high_volume']).rename(
+                columns={"fhv_high_volume": "Ridehailing apps"}), year_month)
 
     @staticmethod
     def taxi_usage_json_to_dataframes(json_path):
@@ -44,7 +57,7 @@ class RideHailReference:
             df = self.ref_df[service]
             reseted_index = df.reset_index()
             result_df[service] = df[[column_name, 'year_month']]
-        return pd.concat(result_df, join='outer', axis=1)
+        return pd.concat(result_df, join='outer', axis=1).reset_index()
 
 
 class RideHailDashboard:
