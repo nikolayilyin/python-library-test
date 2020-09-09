@@ -1053,15 +1053,18 @@ def calculate_mean_time_at_home(s3url, iteration, ax, total_persons, title=""):
 
 
 def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url_base_run, date_to_calc_diff=None,
-                                                figsize=(20, 5), rot=15, suptitle=""):
+                                                figsize=(20, 5), rot=15, suptitle="", plot_columns=None):
     columns = ['date', 'subway', 'bus', 'rail', 'car', 'transit']
 
-    benchmark_mta_info = [['09 2020', -72.90, -54.00, -78.86, -12.90, -68.42],
-                          ['08 2020', -75.50, -40.00, -83.32, -08.90, -66.68],
-                          ['07 2020', -79.60, -49.00, -83.91, -16.20, -71.90],
-                          ['06 2020', -87.60, -66.00, -90.95, -37.40, -82.17],
-                          ['05 2020', -90.70, -75.00, -95.00, -52.30, -86.89],
-                          ['04 2020', -90.60, -77.00, -96.13, -63.20, -87.47]]
+    benchmark_mta_info = [['09 2020\n  mta.info', -72.90, -54.00, -78.86, -12.90, -68.42],
+                          ['08 2020\n  mta.info', -75.50, -40.00, -83.32, -08.90, -66.68],
+                          ['07 2020\n  mta.info', -79.60, -49.00, -83.91, -16.20, -71.90],
+                          ['06 2020\n  mta.info', -87.60, -66.00, -90.95, -37.40, -82.17],
+                          ['05 2020\n  mta.info', -90.70, -75.00, -95.00, -52.30, -86.89],
+                          ['04 2020\n  mta.info', -90.60, -77.00, -96.13, -63.20, -87.47]]
+
+    if not plot_columns:
+        plot_columns = columns[1:]
 
     date_to_benchmark = {}
     for row in benchmark_mta_info:
@@ -1134,16 +1137,18 @@ def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url
 
         graph_data.append(['{0}'.format(run_title), diff_sub, diff_bus, diff_rail, diff_car, diff_transit])
 
-    def plot_bars(df, ax, title):
-        df.groupby('date').sum().plot(kind='bar', ax=ax, rot=rot)
+    def plot_bars(df, ax, title, columns_to_plot):
+        df.groupby('date').sum()[columns_to_plot].plot(kind='bar', ax=ax, rot=rot)
         ax.grid('on', which='major', axis='y')
         ax.set_title(title)
         ax.legend(loc='center left', bbox_to_anchor=(1, 0.7))
 
     if date_to_calc_diff:
-        fig, axs = plt.subplots(1, 3, sharey='all', figsize=figsize)
-    else:
         fig, axs = plt.subplots(1, 2, sharey='all', figsize=figsize)
+        ax_main = axs[0]
+    else:
+        fig, axs = plt.subplots(1, 1, sharey='all', figsize=figsize)
+        ax_main = axs
 
     fig.tight_layout(pad=0.1)
     fig.subplots_adjust(wspace=0.25, hspace=0.1)
@@ -1152,15 +1157,14 @@ def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url
                  fontsize=17)
 
     reference_df = pd.DataFrame(benchmark_mta_info, columns=columns)
-    result = pd.DataFrame(graph_data, columns=columns)
+    result = pd.DataFrame(graph_data, columns=columns).append(reference_df)
 
-    plot_bars(reference_df, axs[0], 'reference from mta.info')
-    plot_bars(result, axs[1], 'BEAM runs')
+    plot_bars(result, ax_main, 'reference from mta.info vs BEAM simulation', plot_columns)
 
     if date_to_calc_diff:
         diff = result[columns[1:]].sub(date_to_benchmark[date_to_calc_diff], axis=1)
         diff[columns[0]] = result[columns[0]]
-        plot_bars(diff, axs[2], 'result minus reference')
+        plot_bars(diff, axs[1], 'result minus reference', plot_columns)
 
 
 def plot_modechoice_comparison(title_to_s3url, benchmark_url):
