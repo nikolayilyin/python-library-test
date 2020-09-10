@@ -82,7 +82,7 @@ class RideHailDashboard:
         return self.fleet_size
 
     def get_df(self):
-        data = {'fleet_size': [self.get_fleet_size()], 'total_number_of_trips': [self.get_total_number_of_trips()], 'number_of_shared_trips': [self.get_number_of_shared_trips()]}
+        data = {'total_number_of_trips': [self.get_total_number_of_trips()], 'number_of_shared_trips': [self.get_number_of_shared_trips()]}
         return pd.DataFrame.from_dict(data)
 
     @staticmethod
