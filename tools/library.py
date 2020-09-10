@@ -1049,11 +1049,11 @@ def calculate_median_time_at_home(s3url, iteration, total_persons, debug_print=F
     return median_time_at_home
 
 
-def plot_median_time_at_home(title_to_s3url, total_persons, iteration, figsize=(30, 5)):
+def plot_median_time_at_home(title_to_s3url, total_persons, iteration, figsize=(30, 5), debug_print=False):
     mean_time = []
 
     for ((title, s3url), ax_idx) in zip(title_to_s3url, range(len(title_to_s3url))):
-        median_time = calculate_median_time_at_home(s3url, total_persons=total_persons, iteration=iteration)
+        median_time = calculate_median_time_at_home(s3url, iteration, total_persons, debug_print)
         mean_time.append((title, median_time))
 
     baseline = mean_time[0][1]
