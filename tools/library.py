@@ -1018,7 +1018,7 @@ def get_calibration_text_data(s3url, commit=""):
     return "{}, ,{},{}, , ,{}, ,{}".format(config_section, commit, s3url, modes_section, intercepts_sections)
 
 
-def calculate_median_time_at_home(s3url, iteration, ax, total_persons, title="", debug_print=False):
+def calculate_median_time_at_home(s3url, iteration, total_persons, debug_print=False):
     s3path = get_output_path_from_s3_url(s3url)
     events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
 
@@ -1034,9 +1034,6 @@ def calculate_median_time_at_home(s3url, iteration, ax, total_persons, title="",
 
     home_acts['homeActTime'] = home_acts.apply(get_home_activity_time, axis=1)
     home_activities = ((home_acts.groupby('person')['homeActTime']).sum() + 24).reset_index()
-
-    home_activities['homeActTime'].hist(bins=24, ax=ax)
-    ax.set_title('Time at home per person\n{}'.format(title))
 
     affected_persons = len(home_acts['person'].unique())
 
@@ -1055,12 +1052,8 @@ def calculate_median_time_at_home(s3url, iteration, ax, total_persons, title="",
 def plot_median_time_at_home(title_to_s3url, total_persons, iteration, figsize=(30, 5)):
     mean_time = []
 
-    _, axs = plt.subplots(1, len(title_to_s3url), sharey="all", figsize=figsize)
-
     for ((title, s3url), ax_idx) in zip(title_to_s3url, range(len(title_to_s3url))):
-        median_time = calculate_median_time_at_home(s3url, ax=axs[ax_idx],
-                                                    total_persons=total_persons, iteration=iteration,
-                                                    title=title)
+        median_time = calculate_median_time_at_home(s3url, total_persons=total_persons, iteration=iteration)
         mean_time.append((title, median_time))
 
     baseline = mean_time[0][1]
@@ -1081,7 +1074,8 @@ def plot_median_time_at_home(title_to_s3url, total_persons, iteration, figsize=(
 
 
 def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url_base_run, date_to_calc_diff=None,
-                                                figsize=(20, 5), rot=15, suptitle="", plot_columns=None):
+                                                figsize=(20, 5), rot=15, suptitle="",
+                                                plot_columns=None, plot_reference=True):
     columns = ['date', 'subway', 'bus', 'rail', 'car', 'transit']
 
     benchmark_mta_info = [['09 2020\n  mta.info', -72.90, -54.00, -78.86, -12.90, -68.42],
@@ -1184,8 +1178,10 @@ def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url
     plt.suptitle('Comparison of difference vs baseline and vs real data from MTI.info\n{}'.format(suptitle), y=1.2,
                  fontsize=17)
 
-    reference_df = pd.DataFrame(benchmark_mta_info, columns=columns)
-    result = pd.DataFrame(graph_data, columns=columns).append(reference_df)
+    result = pd.DataFrame(graph_data, columns=columns)
+    if plot_reference:
+        reference_df = pd.DataFrame(benchmark_mta_info, columns=columns)
+        result = result.append(reference_df)
 
     plot_bars(result, ax_main, 'reference from mta.info vs BEAM simulation', plot_columns)
 
@@ -1195,7 +1191,7 @@ def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url
         plot_bars(diff, axs[1], 'result minus reference', plot_columns)
 
 
-def plot_modechoice_comparison(title_to_s3url, benchmark_url):
+def plot_modechoice_comparison(title_to_s3url, benchmark_url, benchmark_name="benchmark"):
     modes = ['bike', 'car', 'drive_transit', 'ride_hail',
              'ride_hail_pooled', 'ride_hail_transit', 'walk', 'walk_transit']
 
@@ -1217,7 +1213,7 @@ def plot_modechoice_comparison(title_to_s3url, benchmark_url):
     benchmark = get_realized_modes(benchmark_url).reset_index(drop=True)
 
     benchmark_absolute = benchmark.copy()
-    benchmark_absolute['name'] = 'benchmark'
+    benchmark_absolute['name'] = benchmark_name
 
     zeros = benchmark_absolute.copy()
     for mode in modes:
