@@ -15,6 +15,7 @@ from urllib import request
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from io import StringIO
+import statistics
 
 
 # import dashboard.ridehail_dashboard
@@ -1017,7 +1018,7 @@ def get_calibration_text_data(s3url, commit=""):
     return "{}, ,{},{}, , ,{}, ,{}".format(config_section, commit, s3url, modes_section, intercepts_sections)
 
 
-def calculate_mean_time_at_home(s3url, iteration, ax, total_persons, title=""):
+def calculate_median_time_at_home(s3url, iteration, ax, total_persons, title="", debug_print=False):
     s3path = get_output_path_from_s3_url(s3url)
     events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
 
@@ -1035,21 +1036,48 @@ def calculate_mean_time_at_home(s3url, iteration, ax, total_persons, title=""):
     home_activities = ((home_acts.groupby('person')['homeActTime']).sum() + 24).reset_index()
 
     home_activities['homeActTime'].hist(bins=24, ax=ax)
-    ax.set_title('Time at home per person. Simulated.\n{}'.format(title))
+    ax.set_title('Time at home per person\n{}'.format(title))
 
     affected_persons = len(home_acts['person'].unique())
 
-    # number_of_missing_persons = total_persons - affected_persons
-    # sitting_at_home_data = [[0, 24.0]] * number_of_missing_persons
-    # sitting_at_home = pd.DataFrame(sitting_at_home_data, columns=['person', 'homeActTime'])
-    # home_activities_total = home_activities.append(sitting_at_home, sort=False)
+    all_people_home_time = list(home_activities['homeActTime']) + [24] * (total_persons - affected_persons)
+    median_time_at_home = statistics.median(all_people_home_time)
+    if debug_print:
+        print('all people home time. len:{} sum:{} mean:{} median:{}'.format(len(all_people_home_time),
+                                                                             sum(all_people_home_time),
+                                                                             sum(all_people_home_time) / len(
+                                                                                 all_people_home_time),
+                                                                             median_time_at_home))
 
-    # home_activities_total['homeActTime'].hist(bins=24, ax=ax2, log=True)
-    # ax2.set_title('Total time at home per person. Logarithmic scale. ' + title)
+    return median_time_at_home
 
-    mean_time_at_home = (home_activities['homeActTime'].sum() + (total_persons - affected_persons) * 24) / total_persons
 
-    return mean_time_at_home
+def plot_median_time_at_home(title_to_s3url, total_persons, iteration, figsize=(30, 5)):
+    mean_time = []
+
+    _, axs = plt.subplots(1, len(title_to_s3url), sharey="all", figsize=figsize)
+
+    for ((title, s3url), ax_idx) in zip(title_to_s3url, range(len(title_to_s3url))):
+        median_time = calculate_median_time_at_home(s3url, ax=axs[ax_idx],
+                                                    total_persons=total_persons, iteration=iteration,
+                                                    title=title)
+        mean_time.append((title, median_time))
+
+    baseline = mean_time[0][1]
+
+    time_at_home_vs_baseline = ([], [])
+
+    for (title, avg_time_at_home) in mean_time:
+        ratio = avg_time_at_home / baseline
+        time_at_home_vs_baseline[0].append(title)
+        time_at_home_vs_baseline[1].append(ratio)
+
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    x = range(len(mean_time))
+    y = time_at_home_vs_baseline[1]
+    plt.xticks(x, time_at_home_vs_baseline[0])
+    ax.plot(x, y)
+    ax.set_title("Median time at home months vs baseline")
 
 
 def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url_base_run, date_to_calc_diff=None,
