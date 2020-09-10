@@ -902,9 +902,8 @@ def analyze_fake_walkers(s3url, iteration, threshold=2000, title="", modechoice=
     print('number of FAKE walkers, FAKE walkers of all modechoice events :')
     print(number_of_fake_walkers, number_of_fake_walkers / number_of_all_modechoice)
 
-    return "{},{},{},{},{}".format(number_of_real_walkers, number_of_real_walkers / number_of_all_modechoice,
-                                   number_of_fake_walkers, number_of_fake_walkers / number_of_all_modechoice,
-                                   number_of_all_modechoice)
+    return [number_of_real_walkers, number_of_real_walkers / number_of_all_modechoice,
+            number_of_fake_walkers, number_of_fake_walkers / number_of_all_modechoice, number_of_all_modechoice]
 
 
 def parse_config(config_url, complain=True):
