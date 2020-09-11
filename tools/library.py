@@ -1077,12 +1077,14 @@ def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url
                                                 plot_columns=None, plot_reference=True):
     columns = ['date', 'subway', 'bus', 'rail', 'car', 'transit']
 
-    benchmark_mta_info = [['09 2020\n  mta.info', -72.90, -54.00, -78.86, -12.90, -68.42],
-                          ['08 2020\n  mta.info', -75.50, -40.00, -83.32, -08.90, -66.68],
-                          ['07 2020\n  mta.info', -79.60, -49.00, -83.91, -16.20, -71.90],
-                          ['06 2020\n  mta.info', -87.60, -66.00, -90.95, -37.40, -82.17],
-                          ['05 2020\n  mta.info', -90.70, -75.00, -95.00, -52.30, -86.89],
-                          ['04 2020\n  mta.info', -90.60, -77.00, -96.13, -63.20, -87.47]]
+    suffix = '\n  mta.info'
+
+    benchmark_mta_info = [['09 2020' + suffix, -72.90, -54.00, -78.86, -12.90, -68.42],
+                          ['08 2020' + suffix, -75.50, -40.00, -83.32, -08.90, -66.68],
+                          ['07 2020' + suffix, -79.60, -49.00, -83.91, -16.20, -71.90],
+                          ['06 2020' + suffix, -87.60, -66.00, -90.95, -37.40, -82.17],
+                          ['05 2020' + suffix, -90.70, -75.00, -95.00, -52.30, -86.89],
+                          ['04 2020' + suffix, -90.60, -77.00, -96.13, -63.20, -87.47]]
 
     if not plot_columns:
         plot_columns = columns[1:]
@@ -1185,10 +1187,10 @@ def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url
     plot_bars(result, ax_main, 'reference from mta.info vs BEAM simulation', plot_columns)
 
     if date_to_calc_diff:
-        diff = result[columns[1:]].sub(date_to_benchmark[date_to_calc_diff], axis=1)
-        diff[columns[0]] = result[columns[0]]
-        plot_bars(diff, axs[1], 'result minus reference', plot_columns)
-
+        df_to_compare = pd.DataFrame(graph_data, columns=columns)
+        diff = df_to_compare[columns[1:]].sub(date_to_benchmark[date_to_calc_diff + suffix], axis=1)
+        diff[columns[0]] = df_to_compare[columns[0]]
+        plot_bars(diff, axs[1], 'runs minus reference at {}'.format(date_to_calc_diff), plot_columns)
 
 def plot_modechoice_comparison(title_to_s3url, benchmark_url, benchmark_name="benchmark"):
     modes = ['bike', 'car', 'drive_transit', 'ride_hail',
