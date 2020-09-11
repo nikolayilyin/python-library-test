@@ -1192,6 +1192,7 @@ def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url
         diff[columns[0]] = df_to_compare[columns[0]]
         plot_bars(diff, axs[1], 'runs minus reference at {}'.format(date_to_calc_diff), plot_columns)
 
+
 def plot_modechoice_comparison(title_to_s3url, benchmark_url, benchmark_name="benchmark"):
     modes = ['bike', 'car', 'drive_transit', 'ride_hail',
              'ride_hail_pooled', 'ride_hail_transit', 'walk', 'walk_transit']
