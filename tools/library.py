@@ -1193,12 +1193,15 @@ def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url
         plot_bars(diff, axs[1], 'runs minus reference at {}'.format(date_to_calc_diff), plot_columns)
 
 
-def plot_modechoice_comparison(title_to_s3url, benchmark_url, benchmark_name="benchmark"):
+def plot_modechoice_comparison(title_to_s3url, benchmark_url, benchmark_name="benchmark",
+                               iteration=0, do_fake_walk_analysis=False, s3url_to_fake_walkers=None):
     modes = ['bike', 'car', 'drive_transit', 'ride_hail',
-             'ride_hail_pooled', 'ride_hail_transit', 'walk', 'walk_transit']
+             'ride_hail_pooled', 'ride_hail_transit', 'walk_transit', 'walk']
 
-    # def get_realized_modes(s3url, data_file_name='referenceRealizedModeChoice.csv'):
-    def get_realized_modes(s3url, data_file_name='realizedModeChoice.csv'):
+    if do_fake_walk_analysis:
+        modes = modes + ['walk_fake', 'walk_real']
+
+    def get_realized_modes(s3url, data_file_name='realizedModeChoice.csv', fake_walkers=None):
         path = get_output_path_from_s3_url(s3url) + "/" + data_file_name
         df = pd.read_csv(path)
         tail = df.tail(1).copy()
@@ -1210,9 +1213,29 @@ def plot_modechoice_comparison(title_to_s3url, benchmark_url, benchmark_name="be
             else:
                 tail[m] = tail[m].astype(float)
 
+        if do_fake_walk_analysis:
+            fake_walkers_current = None
+            if fake_walkers:
+                fake_walkers_current = fake_walkers.get(s3url)
+            if not fake_walkers_current:
+                fake_walkers_current = analyze_fake_walkers(s3url, iteration, threshold=2000, title="", modechoice=None)
+
+            walk_real_perc = fake_walkers_current[1]
+            walk_fake_perc = fake_walkers_current[3]
+
+            total_perc = walk_real_perc + walk_fake_perc
+            one_perc_of_walk = int(tail['walk']) / total_perc
+
+            print("walk: {} 1%: {} walk_real: {} walk_fake: {}".format(int(tail['walk']), one_perc_of_walk,
+                                                                       one_perc_of_walk * walk_real_perc,
+                                                                       one_perc_of_walk * walk_fake_perc))
+
+            tail['walk_real'] = one_perc_of_walk * walk_real_perc
+            tail['walk_fake'] = one_perc_of_walk * walk_fake_perc
+
         return tail[modes]
 
-    benchmark = get_realized_modes(benchmark_url).reset_index(drop=True)
+    benchmark = get_realized_modes(benchmark_url, fake_walkers=s3url_to_fake_walkers).reset_index(drop=True)
 
     benchmark_absolute = benchmark.copy()
     benchmark_absolute['name'] = benchmark_name
@@ -1226,7 +1249,7 @@ def plot_modechoice_comparison(title_to_s3url, benchmark_url, benchmark_name="be
     modechoices_diff_in_percentage = [zeros]
 
     for (name, url) in title_to_s3url:
-        modechoice = get_realized_modes(url).reset_index(drop=True)
+        modechoice = get_realized_modes(url, fake_walkers=s3url_to_fake_walkers).reset_index(drop=True)
 
         modechoice_absolute = modechoice.copy()
         modechoice_absolute['name'] = name
