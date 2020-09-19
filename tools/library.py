@@ -1379,7 +1379,7 @@ def plot_calibration_parameters(title_to_s3url,
                  color=removal_probabilities_color, alpha=0.5, linewidth=linewidth)
 
 
-def read_ridership_counts_absolute_numbers(s3url, iteration=0):
+def read_nyc_ridership_counts_absolute_numbers_for_mta_comparison(s3url, iteration=0):
     holland_tunnel = {1110292, 1110293, 1110294, 1110295, 540918, 540919, 782080, 782081}
     linkoln_tunnel = {1057628, 1057629, 1057630, 1057631, 308, 309, 817812, 817813, 817814, 817815, 87180, 87181}
     george_washingtone_bridge = {735454, 735455, 767820, 767821, 781014, 781015, 781086, 781087, 781156, 781157, 782128,
