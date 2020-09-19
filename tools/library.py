@@ -1436,8 +1436,8 @@ def read_nyc_ridership_counts_absolute_numbers_for_mta_comparison(s3url, iterati
 
     print('read pev and pt events of shape:', pte.shape)
 
-    pev = pte[(pte['type'] == 'PersonEntersVehicle')]
-    pte = pte[(pte['type'] == 'PathTraversal')]
+    pev = pte[(pte['type'] == 'PersonEntersVehicle')][['type', 'person', 'vehicle', 'time']]
+    pte = pte[(pte['type'] == 'PathTraversal')][['type', 'vehicle', 'vehicleType', 'links', 'time', 'driver']]
 
     walk_transit_modes = {'BUS-DEFAULT', 'RAIL-DEFAULT'}  # ,'SUBWAY-DEFAULT'
     drivers = set(pte[pte['vehicleType'].isin(walk_transit_modes)]['driver'])
