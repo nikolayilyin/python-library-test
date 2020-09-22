@@ -1579,6 +1579,99 @@ def read_bus_ridership_by_route_and_hour(s3url, gtfs_trip_id_to_route_id=None, i
     return bus_to_agency_to_trip_to_hour
 
 
+def read_persons_vehicles_trips(s3url, iteration):
+    def read_pte_pelv_for_walk_transit(nrows=None):
+        s3path = get_output_path_from_s3_url(s3url)
+        events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
+
+        start_time = time.time()
+        columns = ['type', 'time', 'vehicle', 'driver', 'arrivalTime', 'departureTime', 'length', 'vehicleType',
+                   'person']
+        events = pd.concat([df[(df['type'] == 'PersonEntersVehicle') |
+                               (df['type'] == 'PathTraversal') |
+                               (df['type'] == 'PersonLeavesVehicle')][columns]
+                            for df in pd.read_csv(events_file_path, low_memory=False, chunksize=100000, nrows=nrows)])
+        print("events loading took %s seconds" % (time.time() - start_time))
+
+        ptes = events[events['type'] == 'PathTraversal']
+
+        drivers = set(ptes[ptes['vehicleType'].isin(walk_transit_modes)]['driver'])
+        transit_vehicles = set(ptes[ptes['vehicleType'].isin(walk_transit_modes)]['vehicle'])
+
+        events = events[~events['person'].isin(drivers)]
+        events = events[events['vehicle'].isin(transit_vehicles)]
+
+        ptes = events[events['type'] == 'PathTraversal']
+        pelvs = events[(events['type'] == 'PersonEntersVehicle') | (events['type'] == 'PersonLeavesVehicle')]
+
+        print('events:', events.shape)
+        print('pte:', ptes.shape)
+        print('pelv:', pelvs.shape)
+
+        return ptes, pelvs
+
+    walk_transit_modes = {'BUS-DEFAULT', 'SUBWAY-DEFAULT', 'RAIL-DEFAULT'}
+
+    (pte, pelv) = read_pte_pelv_for_walk_transit()
+
+    person_trips = pelv.groupby('person')[['type', 'time', 'vehicle']].agg(list).copy()
+    print('person_trips:', person_trips.shape)
+
+    def get_dict_departure_to_index(row):
+        depart = row['departureTime']
+        return {x: i for x, i in zip(depart, range(len(depart)))}
+
+    vehicles_trips = pte.groupby('vehicle')[['arrivalTime', 'departureTime', 'length', 'vehicleType']].agg(list).copy()
+    vehicles_trips['departureToIndex'] = vehicles_trips.apply(get_dict_departure_to_index, axis=1)
+    print('vehicles_trips:', vehicles_trips.shape)
+
+    def calc_person_trips_distances(row, transit_modes, vehicles_trips_df):
+        ttypes = row['type']
+        ttimes = row['time']
+        tvehicles = row['vehicle']
+
+        veh_entered = None
+        time_entered = None
+        trips_per_mode = {x: 0.0 for x in transit_modes}
+
+        if len(ttypes) != len(ttimes) or len(ttypes) != len(tvehicles):
+            print('PROBLEMS. lengts are not equal:', row)
+            return [trips_per_mode[tm] for tm in transit_modes]
+
+        for (ttype, ttime, tvehicle) in zip(ttypes, ttimes, tvehicles):
+            if ttype == 'PersonEntersVehicle':
+                veh_entered = tvehicle
+                time_entered = ttime
+
+            if ttype == 'PersonLeavesVehicle':
+                if veh_entered is None:
+                    pass
+                elif veh_entered != tvehicle:
+                    print('PROBLEMS. left different vehicle:', row)
+                else:
+                    veh_trip = vehicles_trips_df.loc[tvehicle]
+                    veh_type = veh_trip['vehicleType'][0]
+                    arrivals = veh_trip['arrivalTime']
+                    lenghts = veh_trip['length']
+                    idx = veh_trip['departureToIndex'].get(time_entered)
+                    trip_len = 0
+
+                    while len(arrivals) > idx and arrivals[idx] <= ttime:
+                        trip_len = trip_len + lenghts[idx]
+                        idx = idx + 1
+
+                    trips_per_mode[veh_type] = trips_per_mode[veh_type] + trip_len
+
+        return [trips_per_mode[tm] for tm in transit_modes]
+
+    transit_modes_names = list(walk_transit_modes)
+
+    person_trips[transit_modes_names] = person_trips.apply(
+        lambda row: calc_person_trips_distances(row, transit_modes_names, vehicles_trips), axis=1, result_type="expand")
+
+    return person_trips, vehicles_trips
+
+
 nyc_volumes_benchmark_date = '2018-04-11'
 nyc_volumes_benchmark_raw = read_traffic_counts(
     pd.read_csv('https://data.cityofnewyork.us/api/views/ertz-hr4r/rows.csv?accessType=DOWNLOAD'))
