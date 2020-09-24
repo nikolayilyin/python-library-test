@@ -1439,7 +1439,7 @@ def read_nyc_ridership_counts_absolute_numbers_for_mta_comparison(s3url, iterati
     pev = pte[(pte['type'] == 'PersonEntersVehicle')][['type', 'person', 'vehicle', 'time']]
     pte = pte[(pte['type'] == 'PathTraversal')][['type', 'vehicle', 'vehicleType', 'links', 'time', 'driver']]
 
-    walk_transit_modes = {'BUS-DEFAULT', 'RAIL-DEFAULT'}  # ,'SUBWAY-DEFAULT'
+    walk_transit_modes = {'BUS-DEFAULT', 'RAIL-DEFAULT', 'SUBWAY-DEFAULT'}
     drivers = set(pte[pte['vehicleType'].isin(walk_transit_modes)]['driver'])
     pev = pev[~pev['person'].isin(drivers)]
 
@@ -1468,14 +1468,13 @@ def read_nyc_ridership_counts_absolute_numbers_for_mta_comparison(s3url, iterati
 
     pev_advanced = pd.merge(pev, vehicle_info, on='vehicle')
 
-    bus_rail_to_count = pev_advanced[pev_advanced['vehicleType'].isin(walk_transit_modes)] \
-        .groupby('gtfsAgency')['person'].count()
+    gtfs_agency_to_count = pev_advanced.groupby('gtfsAgency')['person'].count()
 
     # calculate car
     car_mode = {'Car', 'Car-rh-only', 'PHEV', 'BUS-DEFAULT'}
     car_mta_related = pte[(pte['vehicleType'].isin(car_mode)) &
                           (pte['carMtaRelated'])]['time'].count()
-    bus_rail_car_to_count = bus_rail_to_count.append(pd.Series([car_mta_related], index=['Car']))
+    transit_car_to_count = gtfs_agency_to_count.append(pd.Series([car_mta_related], index=['Car']))
 
     # calculate subway
     person_pevs = pev_advanced.groupby('person').agg(list)[['vehicleType', 'gtfsAgency']]
@@ -1496,7 +1495,7 @@ def read_nyc_ridership_counts_absolute_numbers_for_mta_comparison(s3url, iterati
     person_pevs['subway_trips'] = person_pevs.apply(calc_number_of_subway_trips, axis=1)
     subway_trips = person_pevs['subway_trips'].sum()
 
-    triptype_to_count = bus_rail_car_to_count.append(pd.Series([subway_trips], index=['Subway']))
+    triptype_to_count = transit_car_to_count.append(pd.Series([subway_trips], index=['Subway']))
     triptype_to_count = triptype_to_count.to_frame().reset_index()
 
     print('calculated:\n', pev_advanced.groupby('vehicleType')['person'].count())
