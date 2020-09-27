@@ -1467,6 +1467,7 @@ def read_nyc_ridership_counts_absolute_numbers_for_mta_comparison(s3url, iterati
     vehicle_info = pte.groupby('vehicle')[['vehicleType', 'gtfsAgency']].first().reset_index()
 
     pev_advanced = pd.merge(pev, vehicle_info, on='vehicle')
+    pev_advanced = pev_advanced.sort_values('time', ignore_index=True)
 
     gtfs_agency_to_count = pev_advanced.groupby('gtfsAgency')['person'].count()
 
@@ -1501,6 +1502,54 @@ def read_nyc_ridership_counts_absolute_numbers_for_mta_comparison(s3url, iterati
     print('calculated:\n', pev_advanced.groupby('vehicleType')['person'].count())
 
     return triptype_to_count
+
+
+def calculate_nyc_ridership_and_save_to_s3_if_not_calculated(s3url, iteration, aws_access_key_id, aws_secret_access_key,
+                                                             force=False, output_bucket='beam-outputs'):
+    if force:
+        print('"force" set to True, so, ridership will be recalculated independant of it existence in s3')
+    else:
+        print('"forse" set to False (by default) so, ridership will be calculated only if it does not exist in s3')
+
+    import boto3
+    s3 = boto3.resource('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+
+    s3_additional_output = 'scripts_output'
+
+    ridership = None
+
+    require_string = 'index.html#'
+    if require_string not in s3url:
+        print(
+            's3url does not contain "{}". That means there is no way to save result of the function. Calculation cancelled.'.format(
+                require_string))
+    else:
+        ridership_file_name = '{}.nyc_mta_ridership.csv.gz'.format(iteration)
+        folder_path = s3url.split('#')[1].strip()
+
+        s3path = get_output_path_from_s3_url(s3url)
+        path = "{}/{}/{}".format(s3path, s3_additional_output, ridership_file_name)
+
+        def calculate():
+            print("Ridership calculation...")
+            ridership_df = read_nyc_ridership_counts_absolute_numbers_for_mta_comparison(s3url, iteration)
+            ridership_df.to_csv(ridership_file_name)
+            out_path = "{}/{}/{}".format(folder_path, s3_additional_output, ridership_file_name)
+            s3.meta.client.upload_file(ridership_file_name, output_bucket, out_path)
+            print('\nuploaded\nto: backet {}, path {}\n\n'.format(output_bucket, out_path))
+            return ridership_df
+
+        if force:
+            ridership = calculate()
+        else:
+            try:
+                ridership = pd.read_csv(path, low_memory=False)
+                print("file exist with path '{}'".format(path))
+            except HTTPError:
+                print("Looks like file does not exits with path '{}'".format(path))
+                ridership = calculate()
+
+    return ridership
 
 
 def read_nyc_gtfs_trip_id_to_route_id():
