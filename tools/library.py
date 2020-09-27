@@ -1574,6 +1574,72 @@ def read_ridership_from_s3_output(s3url, iteration):
     return ridership
 
 
+def plot_nyc_ridership(s3url_to_ridership, function_get_run_name_from_s3url, multiplier=20, figsize=(20, 7)):
+    columns = ['date', 'subway', 'bus', 'rail', 'car', 'transit (bus + subway)']
+
+    suffix = '\n  mta.info'
+    reference_mta_info = [['09 2020' + suffix, 1489413, 992200, 130600, 810144, 2481613],
+                          ['08 2020' + suffix, 1348202, 1305000, 94900, 847330, 2653202],
+                          ['07 2020' + suffix, 1120537, 1102200, 96500, 779409, 2222737],
+                          ['06 2020' + suffix, 681714, 741200, 56000, 582624, 1422914],
+                          ['05 2020' + suffix, 509871, 538800, 29200, 444179, 1048671],
+                          ['04 2020' + suffix, 516174, 495400, 24100, 342222, 1011574],
+                          ['00 2019' + suffix, 5491213, 2153913, 622000, 929951, 7645126]]
+
+    def get_graph_data_row_from_dataframe(triptype_to_count, run_name, agency_column='index', value_column='0'):
+
+        def get_agency_data(agency):
+            return triptype_to_count[triptype_to_count[agency_column] == agency][value_column].values[0]
+
+        def get_sum_agency_data(agencies):
+            agencies_sum = 0
+            for agency in agencies:
+                agencies_sum = agencies_sum + get_agency_data(agency)
+            return agencies_sum
+
+        mta_bus = get_sum_agency_data(['MTA_Bronx_20200121', 'MTA_Brooklyn_20200118',
+                                       'MTA_Manhattan_20200123', 'MTA_Queens_20200118',
+                                       'MTA_Staten_Island_20200118'])
+
+        mta_rail = get_sum_agency_data(['Long_Island_Rail_20200215',
+                                        'Metro-North_Railroad_20200215'])
+
+        mta_subway = get_agency_data('Subway')
+        car = get_agency_data('Car')
+        transit = mta_subway + mta_bus
+
+        return [run_name,
+                mta_subway * multiplier,
+                mta_bus * multiplier,
+                mta_rail * multiplier,
+                car * multiplier,
+                transit * multiplier]
+
+    graph_data = []
+
+    for s3url, triptype_to_count in s3url_to_ridership.items():
+        title = function_get_run_name_from_s3url(s3url)
+        row = get_graph_data_row_from_dataframe(triptype_to_count, title)
+        graph_data.append(row)
+
+    result = pd.DataFrame(graph_data, columns=columns)
+    reference_df = pd.DataFrame(reference_mta_info, columns=columns)
+    result = result.append(reference_df)
+
+    def plot_bars(df, ax, ax_title, columns_to_plot):
+        df.groupby('date').sum()[columns_to_plot].plot(kind='bar', ax=ax)
+        ax.grid('on', which='major', axis='y')
+        ax.set_title(ax_title)
+        ax.legend(loc='center left', bbox_to_anchor=(1, 0.7))
+
+    fig, axs = plt.subplots(1, 1, sharey='all', figsize=figsize)
+    ax_main = axs
+
+    plot_bars(result, ax_main,
+              'reference from mta.info vs BEAM simulation\nrun data multiplied by {}'.format(multiplier),
+              ['subway', 'bus', 'rail', 'car', 'transit (bus + subway)'])
+
+
 def read_nyc_gtfs_trip_id_to_route_id():
     urls = """https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency/MTA_Bronx_20200121_trips.csv.gz
               https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency/MTA_Brooklyn_20200118_trips.csv.gz
