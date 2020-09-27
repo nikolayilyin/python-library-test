@@ -1552,6 +1552,28 @@ def calculate_nyc_ridership_and_save_to_s3_if_not_calculated(s3url, iteration, a
     return ridership
 
 
+def read_ridership_from_s3_output(s3url, iteration):
+    ridership = None
+    s3_additional_output = 'scripts_output'
+
+    require_string = 'index.html#'
+    if require_string not in s3url:
+        print(
+            's3url does not contain "{}". That means there is no way read prepared output.'.format(require_string))
+    else:
+        ridership_file_name = '{}.nyc_mta_ridership.csv.gz'.format(iteration)
+        s3path = get_output_path_from_s3_url(s3url)
+        path = "{}/{}/{}".format(s3path, s3_additional_output, ridership_file_name)
+
+        try:
+            ridership = pd.read_csv(path, low_memory=False)
+            print("downloaded ridership from ", path)
+        except HTTPError:
+            print("Looks like file does not exits -> '{}'".format(path))
+
+    return ridership
+
+
 def read_nyc_gtfs_trip_id_to_route_id():
     urls = """https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency/MTA_Bronx_20200121_trips.csv.gz
               https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency/MTA_Brooklyn_20200118_trips.csv.gz
