@@ -1673,7 +1673,7 @@ def read_bus_ridership_by_route_and_hour(s3url, gtfs_trip_id_to_route_id=None, i
 
     print('read PEV and PT events of shape:', pte.shape)
 
-    pev = pte[(pte['type'] == 'PersonEntersVehicle')]
+    pev = pte[(pte['type'] == 'PersonEntersVehicle')][['person', 'vehicle', 'time']]
     pev['hour'] = pev['time'] // 3600
 
     pte = pte[(pte['type'] == 'PathTraversal') & (pte['vehicleType'] == 'BUS-DEFAULT')]
@@ -1706,7 +1706,7 @@ def read_bus_ridership_by_route_and_hour(s3url, gtfs_trip_id_to_route_id=None, i
 
     pev = pd.merge(pev, vehicle_info, on='vehicle')
 
-    print('got advanced version of PEV:', pev.shape)
+    print('got advanced version of PEV:', pev.shape, 'with columns:', pev.columns)
 
     walk_transit_modes = {'BUS-DEFAULT'}  # ,'RAIL-DEFAULT', 'SUBWAY-DEFAULT'
     bus_to_agency_to_trip_to_hour = pev[(pev['vehicleType'].isin(walk_transit_modes))] \
