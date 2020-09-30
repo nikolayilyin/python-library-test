@@ -114,58 +114,52 @@ def plot_simulation_vs_google_speed_comparison(s3url, iteration, compare_vs_3am,
     df.columns = ['{}_{}'.format(x[0], x[1]) for x in df.columns]
     df['sim_speed'] = df['sim_speed_min']
 
-    fig, (ax00, ax0, ax1) = plt.subplots(1, 3, figsize=(19, 3))
+    fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(22, 5))
     fig.tight_layout(pad=0.1)
     fig.subplots_adjust(wspace=0.15, hspace=0.1)
     fig.suptitle(title, y=1.11)
 
-    title0 = "simulation speed - Google speed"
-    title1 = "simulation speed comparison with Google speed"
+    title0 = "Trip-by-trip speed comparison"
+    title1 = "Hour-by-hour average speed comparison"
     if compare_vs_3am:
         title0 = title0 + " at 3am"
         title1 = title1 + " at 3am"
 
     def plot_hist(google_column_name, label):
-        result_name = 'error_' + label
-        df[result_name] = df['sim_speed'] - df[google_column_name]
-        bins = range(-19, 19, 2)
-        # df[result_name].hist(bins=bins, alpha=1, histtype='step', linewidth=3, label=label, ax=ax0)
-        df[result_name].hist(bins=bins, alpha=0.3, label=label, ax=ax0)
-        df[result_name].plot.kde(bw_method=0.2, ax=ax00)
+        df[label] = df['sim_speed'] - df[google_column_name]
+        df[label].plot.kde(bw_method=0.2, ax=ax0)
 
     if compare_vs_3am:
-        plot_hist('google_api_speed_3am_max', 'max')
+        plot_hist('google_api_speed_3am_max', 'Maximum estimate')
     else:
-        plot_hist('google_api_speed_max', 'max')
-        plot_hist('google_api_speed_mean', 'mean')
-        plot_hist('google_api_speed_min', 'min')
-
-    ax00.axvline(0, color="black", linestyle="--")
-    ax00.set_title(title0)
-    ax00.legend(loc='upper left')
+        plot_hist('google_api_speed_max', 'Maximum estimate')
+        plot_hist('google_api_speed_mean', 'Mean estimate')
+        plot_hist('google_api_speed_min', 'Minimum estimate')
 
     ax0.axvline(0, color="black", linestyle="--")
     ax0.set_title(title0)
-    ax0.set_xlabel('Speed difference')
-    ax0.set_ylabel('Frequency')
     ax0.legend(loc='upper left')
+    ax0.set_xlabel('Difference in speed (m/s)')
+    ax0.set_ylabel('Density')
 
     to_plot_df_speed_0 = df.groupby(['departure_hour_']).mean()
     to_plot_df_speed_0['departure_hour_'] = to_plot_df_speed_0.index
 
     if compare_vs_3am:
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_min', label='g 3am min', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_mean', label='g 3am mean', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_max', label='g 3am max', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_min', label='Minimum estimate 3am', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_mean', label='Mean estimate 3am', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_3am_max', label='Maximum estimate 3am', ax=ax1)
     else:
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_min', label='g min', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_mean', label='g mean', ax=ax1)
-        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_max', label='g max', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_min', label='Minimum estimate', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_mean', label='Mean estimate', ax=ax1)
+        to_plot_df_speed_0.plot(x='departure_hour_', y='google_api_speed_max', label='Maximum estimate', ax=ax1)
 
-    to_plot_df_speed_0.plot(x='departure_hour_', y='sim_speed', ax=ax1)
+    to_plot_df_speed_0.plot(x='departure_hour_', y='sim_speed', label='Simulated Speed', ax=ax1)
 
-    ax1.legend()
+    ax1.legend(loc='upper right')
     ax1.set_title(title1)
+    ax1.set_xlabel('Hour of day')
+    ax1.set_ylabel('Speed (m/s)')
 
 
 def print_network_from(s3path, take_rows):
@@ -762,7 +756,6 @@ def plot_activities_ends_vs_bench(s3url, iteration, ax, ax2=None, title="Activit
         except HTTPError:
             raise NameError('can not download file by url:', events_file_path)
         df['hour'] = (df['time'] / 3600).astype(int)
-        # print("events file url:", events_file_path)
         print("activity ends loading took %s seconds" % (time.time() - start_time))
         return df
 
@@ -921,7 +914,8 @@ def parse_config(config_url, complain=True):
                    "max_destination_choice_set_size",
                    "transit_crowding_VOT_multiplier", "transit_crowding_VOT_threshold",
                    "activity_file_path", "intercept_file_path", "additional_trip_utility",
-                   "ModuleProbability_1", "ModuleProbability_2", "ModuleProbability_3", "ModuleProbability_4"]
+                   "ModuleProbability_1", "ModuleProbability_2", "ModuleProbability_3", "ModuleProbability_4",
+                   "BUS-DEFAULT", "RAIL-DEFAULT", "SUBWAY-DEFAULT"]
     intercept_keys = ["bike_intercept", "car_intercept", "drive_transit_intercept", "ride_hail_intercept",
                       "ride_hail_pooled_intercept", "ride_hail_transit_intercept", "walk_intercept",
                       "walk_transit_intercept", "transfer"]
@@ -960,7 +954,7 @@ def parse_config(config_url, complain=True):
         look_for_physsim_type(line)
 
         for ckey in config_keys:
-            if ckey + "=" in line or ckey + "\"=" in line:
+            if ckey + "=" in line or ckey + "\"=" in line or '"' + ckey + ":" in line:
                 set_value(ckey, line)
 
         for ikey in intercept_keys:
@@ -1586,10 +1580,10 @@ def plot_nyc_ridership(s3url_to_ridership, function_get_run_name_from_s3url, mul
                           ['04 2020' + suffix, 516174, 495400, 24100, 342222, 1011574],
                           ['00 2019' + suffix, 5491213, 2153913, 622000, 929951, 7645126]]
 
-    def get_graph_data_row_from_dataframe(triptype_to_count, run_name, agency_column='index', value_column='0'):
+    def get_graph_data_row_from_dataframe(triptype_to_count_df, run_name, agency_column='index', value_column='0'):
 
         def get_agency_data(agency):
-            return triptype_to_count[triptype_to_count[agency_column] == agency][value_column].values[0]
+            return triptype_to_count_df[triptype_to_count_df[agency_column] == agency][value_column].values[0]
 
         def get_sum_agency_data(agencies):
             agencies_sum = 0
