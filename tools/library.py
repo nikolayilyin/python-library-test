@@ -1188,7 +1188,7 @@ def compare_riderships_vs_baserun_and_benchmark(title_to_s3url, iteration, s3url
 
 
 def plot_modechoice_comparison(title_to_s3url, benchmark_url, benchmark_name="benchmark", iteration=0,
-                               do_fake_walk_analysis=False, fake_walkers=None):
+                               do_percentage_difference=True, do_fake_walk_analysis=False, fake_walkers=None):
     modes = ['bike', 'car', 'drive_transit', 'ride_hail',
              'ride_hail_pooled', 'ride_hail_transit', 'walk_transit', 'walk']
 
@@ -1263,7 +1263,11 @@ def plot_modechoice_comparison(title_to_s3url, benchmark_url, benchmark_name="be
     df_diff = pd.concat(modechoices_difference)
     df_diff_perc = pd.concat(modechoices_diff_in_percentage)
 
-    _, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex='all', figsize=(20, 5 * 3))
+    if do_percentage_difference:
+        _, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex='all', figsize=(20, 5 * 3))
+    else:
+        ax2 = None
+        _, (ax0, ax1) = plt.subplots(2, 1, sharex='all', figsize=(20, 5 * 2))
 
     def plot(df, ax, title):
         df.set_index('name').plot(kind='bar', ax=ax, rot=65)
@@ -1271,11 +1275,13 @@ def plot_modechoice_comparison(title_to_s3url, benchmark_url, benchmark_name="be
         ax.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
         ax.set_title(title)
 
-    plot(df_absolute, ax0, "absolute values of modechoice")
-    plot(df_diff, ax1, "difference between run and benchmark in absolute numbers")
-    plot(df_diff_perc, ax2, "difference between run and benchmark in percentage")
+    plot(df_absolute, ax0, "Absolute values of modechoice")
+    plot(df_diff, ax1, "Difference between run and baseline in absolute numbers")
 
-    plt.suptitle("BEAM run vs benchmark. realizedModeChoice.csv")
+    if do_percentage_difference:
+        plot(df_diff_perc, ax2, "Difference between run and baseline in percentage")
+
+    plt.suptitle("BEAM run vs baseline for realized mode choice")
 
 
 def load_mapping():
@@ -1301,7 +1307,7 @@ def load_tmc_dictionary():
     return {month: group_speed_by_hour(wed[wed['DATA_AS_OF'].dt.month == month]) for month in months}
 
 
-def plot_link_graphs(tmc_data, s3url, iteration, ax=None):
+def plot_link_graphs(tmc_data, s3url, iteration, ax=None, plot_transcom=True):
     mapping = load_mapping()
 
     s3path = get_output_path_from_s3_url(s3url)
@@ -1311,12 +1317,13 @@ def plot_link_graphs(tmc_data, s3url, iteration, ax=None):
     ms_to_mph = 2.23694
     ls['speed'] = ms_to_mph * ls['length'] / ls['traveltime']
 
-    ax = tmc_data.plot(y='SPEED', label='transcom', ax=ax)
+    if plot_transcom:
+        ax = tmc_data.plot(y='SPEED', label='transcom', ax=ax)
 
     beam_plot = ls[['hour', 'speed', 'volume']][ls['volume'] > 0].groupby('hour').apply(
         lambda x: np.average(x['speed'], weights=x['volume']))
     beam_plot = beam_plot[beam_plot.index < 24]
-    beam_plot.plot(y='speed', label='beam', ax=ax)
+    ax = beam_plot.plot(y='speed', label='beam', ax=ax)
 
     ax.set_ylabel("speed MPH")
 
@@ -1515,7 +1522,8 @@ def calculate_nyc_ridership_and_save_to_s3_if_not_calculated(s3url, iteration, a
     require_string = 'index.html#'
     if require_string not in s3url:
         print(
-            's3url does not contain "{}". That means there is no way to save result of the function. Calculation cancelled.'.format(
+            's3url does not contain "{}". That means there is no way to save result of the function. Calculation '
+            'cancelled.'.format(
                 require_string))
     else:
         ridership_file_name = '{}.nyc_mta_ridership.csv.gz'.format(iteration)
@@ -1635,12 +1643,16 @@ def plot_nyc_ridership(s3url_to_ridership, function_get_run_name_from_s3url, mul
 
 
 def read_nyc_gtfs_trip_id_to_route_id():
-    urls = """https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency/MTA_Bronx_20200121_trips.csv.gz
-              https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency/MTA_Brooklyn_20200118_trips.csv.gz
-              https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency/MTA_Manhattan_20200123_trips.csv.gz
-              https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency/MTA_Queens_20200118_trips.csv.gz
-              https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency/MTA_Staten_Island_20200118_trips.csv.gz
-              https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency/NJ_Transit_Bus_20200210_trips.csv.gz""" \
+    urls = """https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency
+    /MTA_Bronx_20200121_trips.csv.gz https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork
+    /gtfs_trips_only_per_agency/MTA_Brooklyn_20200118_trips.csv.gz 
+    https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency
+    /MTA_Manhattan_20200123_trips.csv.gz https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork
+    /gtfs_trips_only_per_agency/MTA_Queens_20200118_trips.csv.gz 
+    https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency
+    /MTA_Staten_Island_20200118_trips.csv.gz 
+    https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency
+    /NJ_Transit_Bus_20200210_trips.csv.gz""" \
         .split('\n')
 
     trip_id_to_route_id = {}
@@ -1800,6 +1812,38 @@ def read_persons_vehicles_trips(s3url, iteration):
         lambda row: calc_person_trips_distances(row, transit_modes_names, vehicles_trips), axis=1, result_type="expand")
 
     return person_trips, vehicles_trips
+
+
+def get_from_s3(s3url, file_name,
+                s3_additional_output='scripts_output'):
+    s3path = get_output_path_from_s3_url(s3url)
+    path = "{}/{}/{}".format(s3path, s3_additional_output, file_name)
+    df = None
+    try:
+        df = pd.read_csv(path, low_memory=False)
+    except HTTPError:
+        print('File does not exist by path:', path)
+
+    return df
+
+
+def save_to_s3(s3url, df, file_name,
+               aws_access_key_id, aws_secret_access_key,
+               output_bucket='beam-outputs', s3_additional_output='scripts_output'):
+    import boto3
+    s3 = boto3.resource('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+
+    require_string = 'index.html#'
+    if require_string not in s3url:
+        print(
+            's3url does not contain "{}". That means there is no way to save df. Cancelled.'.format(
+                require_string))
+    else:
+        df.to_csv(file_name, index=False)
+        folder_path = s3url.split('#')[1].strip()
+        out_path = "{}/{}/{}".format(folder_path, s3_additional_output, file_name)
+        s3.meta.client.upload_file(file_name, output_bucket, out_path)
+        print('saved to s3: ', out_path)
 
 
 nyc_volumes_benchmark_date = '2018-04-11'
