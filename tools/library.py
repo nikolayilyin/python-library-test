@@ -1643,18 +1643,12 @@ def plot_nyc_ridership(s3url_to_ridership, function_get_run_name_from_s3url, mul
 
 
 def read_nyc_gtfs_trip_id_to_route_id():
-    urls = """https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency
-    /MTA_Bronx_20200121_trips.csv.gz https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork
-    /gtfs_trips_only_per_agency/MTA_Brooklyn_20200118_trips.csv.gz 
-    https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency
-    /MTA_Manhattan_20200123_trips.csv.gz https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork
-    /gtfs_trips_only_per_agency/MTA_Queens_20200118_trips.csv.gz 
-    https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency
-    /MTA_Staten_Island_20200118_trips.csv.gz 
-    https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency
-    /NJ_Transit_Bus_20200210_trips.csv.gz""" \
-        .split('\n')
+    base_path = "https://beam-outputs.s3.us-east-2.amazonaws.com/new_city/newyork/gtfs_trips_only_per_agency/"
+    files = ['MTA_Bronx_20200121_trips.csv.gz', 'MTA_Brooklyn_20200118_trips.csv.gz',
+             'MTA_Manhattan_20200123_trips.csv.gz', 'MTA_Queens_20200118_trips.csv.gz',
+             'MTA_Staten_Island_20200118_trips.csv.gz', 'NJ_Transit_Bus_20200210_trips.csv.gz']
 
+    urls = map(lambda file_name: base_path + file_name, files)
     trip_id_to_route_id = {}
 
     for url in urls:
