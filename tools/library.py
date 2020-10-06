@@ -1840,6 +1840,98 @@ def save_to_s3(s3url, df, file_name,
         print('saved to s3: ', out_path)
 
 
+def plot_fake_real_walkers(title, fake_walkers, real_walkers, threshold):
+    fig, axs = plt.subplots(2, 2, figsize=(24, 4 * 2))
+    fig.tight_layout()
+    fig.subplots_adjust(wspace=0.05, hspace=0.2)
+    fig.suptitle(title, y=1.11)
+
+    ax1 = axs[0, 0]
+    ax2 = axs[0, 1]
+
+    fake_walkers['length'].hist(bins=50, ax=ax1, alpha=0.3, label='fake walkers')
+    real_walkers['length'].hist(bins=50, ax=ax1, alpha=0.3, label='real walkers')
+    ax1.legend(loc='upper right', prop={'size': 10})
+    ax1.set_title("Trip length histogram. Fake vs Real walkers. Min length of trip is {0}".format(threshold))
+    ax1.axvline(5000, color="black", linestyle="--")
+
+    fake_walkers['length'].hist(bins=50, ax=ax2, log=True, alpha=0.3, label='fake walkers')
+    real_walkers['length'].hist(bins=50, ax=ax2, log=True, alpha=0.3, label='real walkers')
+    ax2.legend(loc='upper right', prop={'size': 10})
+    ax2.set_title(
+        "Trip length histogram. Fake vs Real walkers. Logarithmic scale. Min length of trip is {0}".format(threshold))
+    ax2.axvline(5000, color="black", linestyle="--")
+
+    ax1 = axs[1, 0]
+    ax2 = axs[1, 1]
+
+    long_real_walkers = real_walkers[real_walkers['length'] >= threshold]
+    number_of_top_alternatives = 5
+    walkers_by_alternative = long_real_walkers.groupby('availableAlternatives')['length'].count().sort_values(
+        ascending=False)
+    top_alternatives = set(
+        walkers_by_alternative.reset_index()['availableAlternatives'].head(number_of_top_alternatives))
+
+    for alternative in top_alternatives:
+        label = str(list(set(alternative.split(':')))).replace('\'','')[1:-1]
+        selected = long_real_walkers[long_real_walkers['availableAlternatives'] == alternative]['length']
+        selected.hist(bins=50, ax=ax1, alpha=0.4, linewidth=4, label=label)
+        selected.hist(bins=20, ax=ax2, log=True, histtype='step', linewidth=4, label=label)
+
+    ax1.set_title("Length histogram of top {} alternatives of real walkers".format(number_of_top_alternatives))
+    ax1.legend(loc='upper right', prop={'size': 10})
+    ax2.set_title(
+        "Length histogram of top {} alternatives of real walkers. Logarithmic scale".format(number_of_top_alternatives))
+    ax2.legend(loc='upper right', prop={'size': 10})
+
+
+def get_fake_real_walkers(s3url, iteration, threshold=2000):
+    s3path = get_output_path_from_s3_url(s3url)
+    events_file_path = s3path + "/ITERS/it.{0}/{0}.events.csv.gz".format(iteration)
+
+    start_time = time.time()
+    modechoice = pd.concat([df[(df['type'] == 'ModeChoice') | (df['type'] == 'Replanning')]
+                            for df in pd.read_csv(events_file_path, low_memory=False, chunksize=100000)])
+    print("events file url:", events_file_path)
+    print("loading took %s seconds" % (time.time() - start_time))
+
+    count_of_replanning = modechoice[modechoice['type'] == 'Replanning'].shape[0]
+    modechoice = modechoice[modechoice['type'] == 'ModeChoice']
+    count_of_modechouces = len(modechoice) - count_of_replanning
+
+    walk_modechoice = modechoice[modechoice['mode'] == 'walk'].copy()
+
+    def is_real(row):
+        if row['length'] < threshold:
+            return True
+
+        alternatives = set(row['availableAlternatives'].split(':'))
+
+        if len(alternatives) == 0:
+            print('+1')
+            return False
+
+        if len(alternatives) == 1 and ('WALK' in alternatives or 'NaN' in alternatives):
+            return False
+
+        return True
+
+    walk_modechoice[['availableAlternatives']] = walk_modechoice[['availableAlternatives']].fillna('NaN')
+    walk_modechoice['isReal'] = walk_modechoice.apply(is_real, axis=1)
+
+    fake_walkers = walk_modechoice[~walk_modechoice['isReal']]
+    real_walkers = walk_modechoice[walk_modechoice['isReal']]
+
+    plot_fake_real_walkers(s3url, fake_walkers, real_walkers, threshold)
+
+    columns = ['real_walkers', 'real_walkers_ratio', 'fake_walkers', 'fake_walkers_ratio', 'total_modechoice']
+    values = [len(real_walkers), len(real_walkers) / count_of_modechouces,
+              len(fake_walkers), len(fake_walkers) / count_of_modechouces, count_of_modechouces]
+
+    walkers = pd.DataFrame(np.array([values]), columns=columns)
+    return walkers
+
+
 nyc_volumes_benchmark_date = '2018-04-11'
 nyc_volumes_benchmark_raw = read_traffic_counts(
     pd.read_csv('https://data.cityofnewyork.us/api/views/ertz-hr4r/rows.csv?accessType=DOWNLOAD'))
