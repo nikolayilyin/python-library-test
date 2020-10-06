@@ -1873,7 +1873,7 @@ def plot_fake_real_walkers(title, fake_walkers, real_walkers, threshold):
         walkers_by_alternative.reset_index()['availableAlternatives'].head(number_of_top_alternatives))
 
     for alternative in top_alternatives:
-        label = str(list(set(alternative.split(':')))).replace('\'','')[1:-1]
+        label = str(list(set(alternative.split(':')))).replace('\'', '')[1:-1]
         selected = long_real_walkers[long_real_walkers['availableAlternatives'] == alternative]['length']
         selected.hist(bins=50, ax=ax1, alpha=0.4, linewidth=4, label=label)
         selected.hist(bins=20, ax=ax2, log=True, histtype='step', linewidth=4, label=label)
@@ -1930,6 +1930,44 @@ def get_fake_real_walkers(s3url, iteration, threshold=2000):
 
     walkers = pd.DataFrame(np.array([values]), columns=columns)
     return walkers
+
+
+def print_spreadsheet_rows(s3urls, commit, iteration):
+    calibration_text = []
+
+    for s3url in s3urls:
+        main_text = get_calibration_text_data(s3url, commit=commit)
+
+        fake_walkers_file_name = "{}.fake_real_walkers.csv.gz".format(iteration)
+        fake_walkers = get_from_s3(s3url, fake_walkers_file_name)
+
+        s3path = get_output_path_from_s3_url(s3url)
+        replanning_path = s3path + "/ITERS/it.{0}/{0}.replanningEventReason.csv".format(iteration)
+        replanning_reasons = pd.read_csv(replanning_path)
+        print('\nreplanning_reasons:\n', replanning_reasons, '\n\n')
+        walk_transit_exhausted = \
+        replanning_reasons[replanning_reasons['ReplanningReason'] == 'ResourceCapacityExhausted WALK_TRANSIT'][
+            'Count'].values[0]
+
+        calibration_text.append((main_text, fake_walkers, walk_transit_exhausted))
+
+    print("\n\nspreadsheet text:")
+    for (text, _, _) in calibration_text:
+        print(text)
+    print("\n")
+
+    print("\n\nfake walkers:")
+    for (_, fake_walkers, _) in calibration_text:
+        if fake_walkers is None:
+            print("Not Available")
+        else:
+            print(fake_walkers['fake_walkers_ratio'].values[0] * 100)
+    print("\n")
+
+    print("\n\nResourceCapacityExhausted WALK_TRANSIT:")
+    for (_, _, text) in calibration_text:
+        print(text)
+    print("\n")
 
 
 nyc_volumes_benchmark_date = '2018-04-11'
