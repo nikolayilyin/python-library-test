@@ -1833,7 +1833,7 @@ def save_to_s3(s3url, df, file_name,
             's3url does not contain "{}". That means there is no way to save df. Cancelled.'.format(
                 require_string))
     else:
-        df.to_csv(file_name, index=False)
+        df.to_csv(file_name)
         folder_path = s3url.split('#')[1].strip()
         out_path = "{}/{}/{}".format(folder_path, s3_additional_output, file_name)
         s3.meta.client.upload_file(file_name, output_bucket, out_path)
